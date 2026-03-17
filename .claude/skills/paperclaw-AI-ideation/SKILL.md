@@ -1,0 +1,440 @@
+---
+name: paperclaw-AI-ideation
+description: Use when the user wants to "brainstorm a research idea", "polish a paper idea", "find a research direction", "identify research gaps", "start a new project", "check if my idea can get into NeurIPS/ICML/ICLR", or shares any raw research concept that needs refinement. Runs an iterative loop of literature search → synthesis → user dialogue → refinement until the idea reaches top-conference publication quality.
+version: 1.0.0
+---
+
+# Research Ideation — Iterative Idea Polishing Loop
+
+An interactive, literature-driven loop that takes a raw research spark and refines it through repeated cycles of search, synthesis, and dialogue until it reaches top-conference (NeurIPS / ICML / ICLR / ACL / KDD) publication quality.
+
+## Core Principle
+
+**Do NOT generate a final research proposal until the idea passes the Conference Readiness Gate.**
+Every loop iteration ends with a readiness score. If the idea is not ready, identify the weakest dimension and loop back with a targeted improvement task. Surface the score to the user at each checkpoint.
+
+---
+
+## Workflow Overview
+
+```
+Raw Idea
+  │
+  ▼
+[Phase 0] Capture          — Understand the spark via 5W1H (one question at a time)
+  │
+  ▼
+[Phase 1] Literature Probe — Quick scan: 10-15 papers, map the landscape
+  │
+  ▼
+[Phase 2] Synthesis Report — Identify gaps, present landscape, propose 2-3 directions
+  │
+  USER CHOOSES DIRECTION
+  │
+  ▼
+[Phase 3] Deep Dive        — 20-30 focused papers, detailed gap analysis
+  │
+  ▼
+[Phase 4] Sharpen          — SMART research question, experimental sketch
+  │
+  ▼
+[Gate]  Conference Readiness Check (Novelty / Significance / Soundness / Feasibility)
+  │
+  ├─ NOT READY → identify weakest dimension → loop back to Phase 2 or 3
+  │
+  └─ READY → generate full Research Proposal
+```
+
+Persist loop state to `./ideation/state.md` so the session can be resumed.
+
+---
+
+## Tool Usage by Phase
+
+| Phase | Tool | Purpose |
+|-------|------|---------|
+| Phase 0 | `WebSearch` | Quick field survey — dominant paradigms, key labs, open problems |
+| Phase 1 | `WebSearch` | Search arXiv, Semantic Scholar, Google Scholar for 10-15 papers |
+| Phase 2 | `AskUserQuestion` | Present 2-3 directions with trade-offs for user choice |
+| Phase 3 | `WebSearch` | Deep search for 20-30 focused papers on the chosen direction |
+| Phase 4 | `AskUserQuestion` | Confirm research question and experimental sketch |
+| Gate | `AskUserQuestion` | Present score card, ask whether to iterate or proceed |
+| All | `TodoWrite` | Track current phase and progress within each phase |
+
+**WebSearch best practices:**
+- Construct queries using Boolean operators (see `references/literature-search-strategies.md`)
+- Run 3-5 searches per phase with different keyword combinations
+- Prioritize top-venue papers from the last 3 years
+- Extract paper title, venue, year, and core claim from search results
+- Record all papers found in `./ideation/papers.md` to avoid duplicate searches
+
+---
+
+## Two Persistent Mental Frameworks
+
+These two frameworks apply at **every phase**, not just Phase 0. Revisit them actively after each new piece of evidence (a paper, a user answer, a gate score).
+
+### 5W1H — Continuously Updated
+
+The 5W1H is not a one-time questionnaire. Treat it as a living model of the idea that gets sharper with each iteration:
+
+| Dimension | What to re-examine after new evidence |
+|-----------|--------------------------------------|
+| **What** | Is the problem statement still precise? Did new papers reveal a better framing? |
+| **Why** | Is the motivation still the strongest available? Did we find a more compelling failure case? |
+| **Who** | Has the target community or application user changed with the chosen direction? |
+| **When** | Is there new concurrent work that changes the timing? |
+| **Where** | Has the domain or application scenario become more or less promising? |
+| **How** | Is the method intuition still the best fit given what we now know from the literature? |
+
+If any dimension weakens after new evidence, flag it explicitly and address it before moving to the next phase.
+
+### First Principles Thinking — Always On
+
+At every decision point, strip away assumptions and reason from fundamentals:
+
+1. **Decompose the problem** — break the research question into its most basic components. What is the core tension or trade-off that makes this hard?
+2. **Challenge inherited assumptions** — question every "everyone does it this way" claim. Why does the field use this method? Is the reason still valid?
+3. **Rebuild from scratch** — given only the fundamental constraints (data, compute, physics, math), what is the most natural solution? Compare it to what the field actually does.
+4. **Identify the real bottleneck** — what is the single constraint that, if removed, would make this problem trivial? That constraint is often the most valuable thing to attack.
+5. **Avoid analogy-driven reasoning** — "this worked in domain X so it should work here" is a hypothesis, not a justification. Ground every claim in first principles before committing to a direction.
+
+---
+
+## Phase 0: Capture the Spark
+
+**Goal:** Understand the raw idea well enough to search meaningfully. Do a quick field survey first so questions are grounded in reality, not assumption.
+
+**Step 0 — Quick field survey (before asking anything):**
+Before posing the first question, run 2-3 fast WebSearch queries to get a basic grasp of the field:
+- What are the dominant paradigms and open problems in this area?
+- Who are the key labs and recurring authors?
+- What are the most-cited benchmarks or datasets?
+
+Example search queries for a topic like "EEG-based emotion recognition":
+- `"EEG emotion recognition" survey OR review 2024 2025`
+- `"affective computing" EEG deep learning NeurIPS OR ICML OR ICLR`
+- `"EEG decoding" benchmark dataset state-of-the-art`
+
+Use this background to inform every question you ask. Never assume the user is an expert in the field — your job is to help them navigate it.
+
+**Interaction rules:**
+- Ask questions **one at a time**. Never ask multiple questions in one message.
+- **Always use the `AskUserQuestion` tool** for multiple-choice questions — it renders a proper interactive dialog with labeled options and descriptions. Do NOT present choices as plain text lists.
+- **Each option must have a `description`** that explains what it means, its implications, and the key trade-off — never list bare option names. Do not ask bare questions like "What method do you want to use?" without explaining what the main method families are.
+- Use `preview` for options that benefit from visual comparison (e.g., method sketches, architecture diagrams in ASCII).
+- Use `multiSelect: true` only when choices are genuinely non-exclusive (e.g., "which aspects matter to you?").
+- Fall back to open-ended text only for questions that have no enumerable options.
+- **Stop condition**: Stop asking once you can answer all 6 dimensions with reasonable confidence. Specifically, you should be able to write a coherent 1-paragraph summary that covers What (specific problem), Why (motivation), Who (audience), and How (initial approach). When/Where may remain partially open — that is acceptable.
+
+**5W1H checklist** (continuously revisited throughout all phases — see below):
+
+| Dimension | Core Question | Example Follow-up Questions |
+|-----------|--------------|----------------------------|
+| **What** | What problem or phenomenon do you want to study? | "Can you describe a specific failure case?", "What would a solution look like in practice?" |
+| **Why** | Why does this problem matter? What is currently broken? | "What happens if this problem is not solved?", "Is this a bottleneck for a larger goal?" |
+| **Who** | Who cares — which research community, which application users? | "Which conference would you submit this to?", "Who would use this in production?" |
+| **When** | What is the timing context? New capability, new dataset, new regulation? | "Has anything changed recently that makes this newly possible?", "Are there upcoming deadlines?" |
+| **Where** | Which domain or application scenario? | "Is this specific to one domain or generalizable?", "Which datasets or benchmarks are standard here?" |
+| **How** | Any early intuition about the method or technical approach? | "Do you have a preference for a method family?", "What resources (GPU, data) do you have access to?" |
+
+**Output of Phase 0:** A 1-paragraph idea summary written back to the user for confirmation before proceeding.
+
+**Output quality checklist:**
+- [ ] All 6 dimensions (What/Why/Who/When/Where/How) are addressed, even if some are tentative
+- [ ] The summary is specific enough to generate meaningful search queries
+- [ ] The user has confirmed the summary before proceeding
+
+---
+
+## Phase 1: Literature Probe
+
+**Goal:** Map the existing landscape quickly. Do not go deep yet — coverage matters more than depth.
+
+**Search targets:**
+- arXiv (cs.LG, cs.CV, cs.CL, stat.ML — choose based on domain)
+- Semantic Scholar for citation counts and influential papers
+- Top-venue proceedings: NeurIPS, ICML, ICLR, ACL, KDD, AAAI (last 3 years)
+
+**Search strategy:**
+1. Extract 2-4 core concept pairs from Phase 0 summary
+2. Build keyword variants (see `references/literature-search-strategies.md`)
+3. Run 3-5 targeted searches; collect 10-15 most relevant papers
+4. Skim abstracts and conclusions — do NOT read full papers at this stage
+
+**Produce a Landscape Table:**
+
+| Paper | Venue/Year | Core Claim | Method | Key Limitation |
+|-------|-----------|------------|--------|---------------|
+| ... | ... | ... | ... | ... |
+
+Present this table to the user as Phase 1 output before continuing.
+
+**Output quality checklist:**
+- [ ] Landscape table contains 10-15 papers (or 5-8 for niche topics — see `references/iteration-loop.md`)
+- [ ] Papers span the last 3 years and include recent SOTA
+- [ ] At least 2 different method families are represented
+- [ ] Key limitations column is filled for every paper (not just "N/A")
+
+---
+
+## Phase 2: Synthesis & Direction Proposals
+
+**Goal:** Identify gaps and propose 2-3 concrete research directions.
+
+**Gap analysis** (use `references/gap-analysis-guide.md`):
+- Literature gaps: topics not yet studied
+- Methodological gaps: common limitations across all existing methods
+- Application gaps: theory-to-practice transfer opportunities
+- Temporal gaps: new capabilities or demands not yet addressed
+
+**Proposal format (from brainstorming skill):**
+Always propose **exactly 2-3 directions** with explicit trade-offs. Lead with your recommended option and explain why. Never commit to one direction without presenting alternatives.
+
+```
+Direction A: [Title]
+  Core claim: ...
+  Key insight: ...
+  Why it could work: ...
+  Main risk: ...
+  Estimated novelty: High / Medium
+  Estimated difficulty: Hard / Medium / Easy
+
+Direction B: [Title]
+  ...
+
+Direction C: [Title]
+  ...
+
+My recommendation: Direction [X], because ...
+```
+
+**User checkpoint:** Present directions, wait for the user to choose or ask follow-up questions. Do NOT proceed to Phase 3 until direction is confirmed.
+
+**Output quality checklist:**
+- [ ] Exactly 2-3 directions proposed (not 1, not 4+)
+- [ ] Each direction has explicit trade-offs (risk vs. reward, novelty vs. feasibility)
+- [ ] A clear recommendation is given with reasoning
+- [ ] Gap analysis references specific papers from Phase 1 landscape table
+
+---
+
+## Phase 3: Deep Dive
+
+**Goal:** Build a thorough literature foundation for the chosen direction.
+
+**Search targets:** 20-30 papers specifically on the chosen direction.
+
+**Deliverables:**
+1. **Comparison matrix** — methods, datasets, metrics, limitations side-by-side
+2. **Gap card** — one paragraph precisely stating the gap this work will fill
+3. **Baseline candidates** — 3-5 papers the proposed method must outperform
+
+Save to `./ideation/literature.md`.
+
+**Output quality checklist:**
+- [ ] 20-30 papers collected, focused specifically on the chosen direction
+- [ ] Comparison matrix covers methods, datasets, metrics, and limitations
+- [ ] Gap card is specific enough to directly inform a Related Work section
+- [ ] 3-5 baseline candidates identified with available code/reproducible results
+
+---
+
+## Phase 4: Sharpen the Research Question
+
+**Goal:** Produce a precise, SMART research question and experimental sketch.
+
+**SMART criteria** (use `references/research-question-formulation.md`):
+- **Specific**: name the method, task, and scenario explicitly
+- **Measurable**: name the datasets and evaluation metrics
+- **Achievable**: check resource and time feasibility
+- **Relevant**: articulate academic and practical value
+- **Time-bound**: estimate 3-month and 6-month milestones
+
+**Experimental sketch:**
+- Proposed method (2-3 sentences)
+- Baselines to compare against
+- Datasets to use
+- Primary metric
+- Expected result (what does "better" look like?)
+
+**Output quality checklist:**
+- [ ] Research question satisfies all 5 SMART dimensions (Specific, Measurable, Achievable, Relevant, Time-bound)
+- [ ] Method description names specific techniques (not vague verbs like "improve" or "enhance")
+- [ ] At least 1 dataset and 1 metric are named explicitly
+- [ ] Expected result is quantifiable or clearly falsifiable
+
+---
+
+## Conference Readiness Gate
+
+Evaluate the current idea state on four dimensions. Score each 1-5.
+
+**Scoring rubric** (detailed in `references/conference-readiness.md`):
+
+| Dimension | Score | What to Check |
+|-----------|-------|---------------|
+| **Novelty** | /5 | Is the core insight new? Does it challenge or go beyond SOTA? |
+| **Significance** | /5 | Do top-venue researchers care? Is the problem important enough? |
+| **Technical Soundness** | /5 | Is the method theoretically grounded? Are claims testable? |
+| **Experimental Feasibility** | /5 | Can experiments be run with available compute and data? |
+
+**Readiness threshold:** Total ≥ 16/20, with no single dimension below 3.
+
+**Gate outcome:**
+- **READY (≥16, no dim <3):** Proceed to Research Proposal generation.
+- **NOT READY:** Report the weakest dimension, explain what is missing, propose a targeted improvement task, and loop back:
+  - Low Novelty → back to Phase 2 (find a sharper angle or different direction)
+  - Low Significance → back to Phase 0/2 (reframe problem or switch domain)
+  - Low Soundness → back to Phase 4 (strengthen the method sketch)
+  - Low Feasibility → back to Phase 4 (adjust scope or resources)
+
+Show the score card to the user at every gate check. Let them decide whether to continue refining or accept the current state.
+
+---
+
+## Research Proposal Output
+
+Generated only after passing the Conference Readiness Gate (or explicit user override).
+
+Save to `./ideation/proposal.md`:
+
+```markdown
+# Research Proposal: [Title]
+
+## One-Sentence Contribution
+[The single most important thing this paper does]
+
+## Problem Statement
+[What is broken, why it matters, who cares]
+
+## Key Insight
+[The core idea that makes this work possible — the "aha" moment]
+
+## Proposed Method
+[2-3 paragraph description of the technical approach]
+
+## Experimental Plan
+- Datasets: ...
+- Baselines: ...
+- Primary metric: ...
+- Expected outcome: ...
+
+## Related Work & Positioning
+[How this differs from the 5 most relevant papers]
+
+## Novelty Claim
+[One paragraph explicitly stating what is new]
+
+## Risks & Mitigations
+[Top 2-3 risks and how to handle them]
+
+## Timeline
+- Month 1-2: ...
+- Month 3-4: ...
+- Month 5-6: ...
+
+## Conference Readiness Score
+Novelty: X/5 | Significance: X/5 | Soundness: X/5 | Feasibility: X/5
+Total: XX/20
+```
+
+---
+
+## Persistent State & Log
+
+All session data lives under `./ideation/`:
+
+```
+./ideation/
+├── state.md      ← current snapshot, overwritten after every phase
+├── log.md        ← append-only history of every attempt and score
+├── papers.md     ← append-only index of all papers ever retrieved
+├── literature.md ← structured analysis notes from Phase 3 deep dive
+└── proposal.md   ← final output (written only after Gate passes)
+```
+
+**At session start:** read `./ideation/state.md` to resume from the correct phase and iteration. Also read `./ideation/papers.md` to know which papers have already been retrieved — do not re-search or re-summarize papers already recorded there.
+
+---
+
+### state.md — Current Snapshot
+
+Overwrite this file after every phase transition. It always reflects the latest state.
+
+```markdown
+# Ideation State
+
+**Idea:** [one-line summary]
+**Phase:** [0 / 1 / 2 / 3 / 4 / Gate / Done]
+**Iteration:** [N]
+**Direction:** [chosen direction title, or "TBD"]
+**Last Score:** N: X/5 | S: X/5 | T: X/5 | F: X/5 | Total: XX/20  (or "-" if not yet scored)
+**Next Action:** [what to do when this session resumes]
+**Updated:** [YYYY-MM-DD]
+```
+
+---
+
+### log.md — Append-Only History
+
+Append one entry per completed phase or gate check. Never overwrite. This is the full audit trail.
+
+```markdown
+# Ideation Log
+
+## [YYYY-MM-DD] Iteration N — Phase X
+
+**Summary:** [one sentence describing what was done this phase]
+
+### Literature / Directions Explored
+- [paper or direction title]: [key finding or trade-off]
+- ...
+
+### Problems Identified
+- [problem 1]: [why it's a problem]
+- [problem 2]: ...
+
+### Gate Score (if this was a Gate check)
+| Dimension | Score | Reason |
+|-----------|-------|--------|
+| Novelty | X/5 | [one-line justification] |
+| Significance | X/5 | [one-line justification] |
+| Soundness | X/5 | [one-line justification] |
+| Feasibility | X/5 | [one-line justification] |
+| **Total** | **XX/20** | [READY / NOT READY] |
+
+**Weakest dimension:** [name]
+**Decision:** [what was chosen — direction, fix, pivot, or "proceed"]
+
+---
+```
+
+---
+
+## Key Interaction Principles
+
+1. **One question at a time** — never overwhelm with multiple questions
+2. **Use `AskUserQuestion` for choices** — always use the tool for multiple-choice questions; each option must have a description explaining its implications; use `preview` for visual comparisons
+3. **Context-rich questions** — every question must include enough background for the user to make an informed choice; never ask bare questions
+3. **Always propose 2-3 options** — never commit to one path without alternatives
+4. **Literature first, speculation second** — every claim must be grounded in papers
+5. **First principles always on** — at every decision point, decompose to fundamentals, challenge inherited assumptions, and rebuild from scratch (see "Two Persistent Mental Frameworks" above)
+6. **5W1H is a living model** — revisit all six dimensions after every new piece of evidence, not just in Phase 0
+7. **Show scores at every gate** — keep the user informed of idea quality
+8. **Explicit user checkpoints** — wait for confirmation at Phase 0, 2, and Gate
+9. **YAGNI for scope** — cut any claim or experiment that is not needed to demonstrate the core insight
+10. **Resume from state** — always check `./ideation/state.md` before starting; append to `./ideation/log.md` after every phase
+11. **Language matching** — detect the language of the user's message and use that language throughout the entire response, including all generated documents (state.md, log.md, literature.md, proposal.md)
+
+---
+
+## Reference Files
+
+Load on demand:
+- `references/iteration-loop.md` — detailed loop logic and loop-back decision tree
+- `references/conference-readiness.md` — top venue criteria, scoring rubrics, rejection patterns
+- `references/gap-analysis-guide.md` — 5 gap types, analysis dimensions, examples
+- `references/5w1h-framework.md` — 5W1H framework for Phase 0
+- `references/literature-search-strategies.md` — keyword construction and database search tips
+- `references/research-question-formulation.md` — SMART criteria, question types, evaluation
