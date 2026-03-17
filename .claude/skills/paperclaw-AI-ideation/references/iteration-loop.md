@@ -18,7 +18,7 @@ Iteration N
        └── NOT READY → diagnose → plan targeted improvement → Iteration N+1
 ```
 
-**Maximum iterations before surfacing to user:** 4. After 4 failed gate checks, pause and discuss a fundamental pivot with the user.
+**Maximum iterations:** 4. After 4 failed gate checks, generate the Proposal anyway with a caveat note in Section 9 (Alternative Directions) listing the unresolved weaknesses. Log the forced-proceed decision to `./ideation/questions.md`.
 
 ---
 
@@ -104,24 +104,25 @@ When the Gate score reveals a weak dimension, run one of these targeted tasks in
 
 ---
 
-## User Checkpoint Protocol
+## Auto-Pilot Checkpoint Protocol
 
-At each phase transition and gate check, use this protocol:
+In auto-pilot mode, checkpoints are logged but do not pause for user input.
 
-**Phase transition checkpoint:**
-> "I've completed [Phase N]. Here is what I found: [summary].
-> Before I move to [Phase N+1], does this look right to you? Any corrections or direction changes?"
+**Phase transition checkpoint (auto):**
+- Present phase completion summary as text output (visible to user in real-time)
+- Log any auto-decisions made during the phase to `./ideation/questions.md`
+- Auto-proceed to the next phase immediately
 
-**Gate checkpoint:**
-> "Conference Readiness Score — Iteration [N]:
-> Novelty: X/5 | Significance: X/5 | Soundness: X/5 | Feasibility: X/5
-> Total: XX/20 — [READY / NOT READY]
->
-> [If not ready]: The weakest dimension is [X]. To improve it, I recommend [targeted task].
-> Should I run another iteration with this focus, or would you like to pivot the direction?"
+**Gate checkpoint (auto):**
+- Present the score card as text output:
+  > "Conference Readiness Score — Iteration [N]:
+  > Novelty: X/5 | Significance: X/5 | Soundness: X/5 | Feasibility: X/5
+  > Total: XX/20 — [READY / NOT READY]"
+- If NOT READY: automatically identify the weakest dimension and loop back to the appropriate phase. Log the decision to `./ideation/questions.md`.
+- If READY: proceed to Proposal generation.
 
-**User override:**
-If the user says "proceed anyway" or "that's good enough", respect their decision and generate the proposal with a note on the unresolved weaknesses.
+**Override (post-hoc):**
+After the Proposal is generated, the user can review `./ideation/questions.md` and re-invoke the skill with override instructions to change any auto-decision. See the "Resume with User Overrides" section in SKILL.md.
 
 ---
 
@@ -183,7 +184,6 @@ See SKILL.md "Persistent State & Log" section for the exact file formats.
 | Condition | Action |
 |-----------|--------|
 | Gate score ≥ 16/20, no dim < 3 | Generate proposal, exit loop |
-| User explicitly approves idea | Generate proposal with caveat note |
-| 4 iterations without reaching threshold | Pause, discuss fundamental pivot |
+| 4 iterations without reaching threshold | Generate proposal with caveat note in Section 9, log forced-proceed to questions.md |
+| User re-invokes with overrides | Read questions.md, apply overrides, re-run from earliest affected phase |
 | User asks to abandon | Save state, summarize what was learned |
-| User switches to a different idea | Archive current state, start new loop |

@@ -1,17 +1,17 @@
 ---
 name: paperclaw-AI-ideation
-description: Use when the user wants to "brainstorm a research idea", "polish a paper idea", "find a research direction", "identify research gaps", "start a new project", "check if my idea can get into NeurIPS/ICML/ICLR", or shares any raw research concept that needs refinement. Runs an iterative loop of literature search → synthesis → user dialogue → refinement until the idea reaches top-conference publication quality.
+description: Use when the user wants to "brainstorm a research idea", "polish a paper idea", "find a research direction", "identify research gaps", "start a new project", "check if my idea can get into NeurIPS/ICML/ICLR", or shares any raw research concept that needs refinement. Runs an auto-pilot loop of literature search → synthesis → auto-decision → refinement until the idea reaches top-conference publication quality. Produces a complete Proposal with all auto-decisions logged for user review. Supports re-running with user overrides.
 version: 1.0.0
 ---
 
 # Research Ideation — Iterative Idea Polishing Loop
 
-An interactive, literature-driven loop that takes a raw research spark and refines it through repeated cycles of search, synthesis, and dialogue until it reaches top-conference (NeurIPS / ICML / ICLR / ACL / KDD) publication quality.
+An **auto-pilot**, literature-driven loop that takes a raw research spark and refines it through repeated cycles of search, synthesis, and autonomous decision-making until it reaches top-conference (NeurIPS / ICML / ICLR / ACL / KDD) publication quality. The entire pipeline runs without user interaction — the user reviews the finished Proposal and can override any auto-decision by re-running.
 
 ## Core Principle
 
 **Do NOT generate a final research proposal until the idea passes the Conference Readiness Gate.**
-Every loop iteration ends with a readiness score. If the idea is not ready, identify the weakest dimension and loop back with a targeted improvement task. Surface the score to the user at each checkpoint.
+Every loop iteration ends with a readiness score. If the idea is not ready, identify the weakest dimension and loop back with a targeted improvement task. All decisions are made autonomously and logged to `./ideation/questions.md` for post-hoc user review.
 
 ---
 
@@ -21,23 +21,17 @@ Every loop iteration ends with a readiness score. If the idea is not ready, iden
 Raw Idea
   │
   ▼
-[Phase 0] Capture            — Understand the spark via 5W1H (one question at a time)
-  │
+[Phase 0] Capture            — Field Survey + auto-infer 5W1H from raw idea
+  │                            (no user Q&A — decisions logged to questions.md)
   ▼
 [Phase 1] Literature Probe   — Quick scan: 10-15 papers, map the landscape
   │
   ▼
-[Phase 2] Synthesis Report   — Identify gaps, present landscape, propose 2-3 directions
+[Phase 2] Synthesis Report   — Identify gaps, propose 2-3 directions
   │
-  USER CHOOSES DIRECTION ─── or ─── "All sound good" / no preference
-  │                                        │
-  │                                        ▼
-  │                              [Phase 2.5] Feasibility Scout
-  │                              Quick-check each direction (2-3 searches each)
-  │                              Auto-select best feasibility profile
-  │                                        │
-  ◄────────────────────────────────────────┘
-  │
+  ▼ (always triggers — no user choice needed)
+[Phase 2.5] Feasibility Scout — Quick-check all directions (2-3 searches each)
+  │                             Auto-select best feasibility profile
   ▼
 [Phase 3] Deep Dive           — 20-30 focused papers, detailed gap analysis
   │
@@ -47,12 +41,54 @@ Raw Idea
   ▼
 [Gate]  Conference Readiness Check (Novelty / Significance / Soundness / Feasibility)
   │
-  ├─ NOT READY → identify weakest dimension → loop back to Phase 2 or 3
+  ├─ NOT READY → auto loop back (max 4 iterations)
   │
-  └─ READY → generate full Research Proposal
+  └─ READY → generate full Research Proposal (with Section 9: Alternative Directions)
 ```
 
 Persist loop state to `./ideation/state.md` so the session can be resumed.
+All auto-decisions are logged to `./ideation/questions.md` for post-hoc review.
+
+---
+
+## Auto-Pilot Mode
+
+This skill runs in **auto-pilot by default**: the entire pipeline executes without calling `AskUserQuestion`. Every decision point that previously required user input is now handled autonomously and logged to `./ideation/questions.md`.
+
+### Auto-Decision Priority
+
+When choosing between options, apply this priority order:
+1. **Feasibility** — can we actually execute this with available data, compute, and code?
+2. **Significance** — does solving this matter to the community?
+3. **Low risk** — avoid directions with concurrent work overlap or missing baselines
+4. **Novelty** — prefer fresher angles, but not at the expense of feasibility
+
+### What Gets Auto-Decided
+
+| Decision Point | Original Behavior | Auto-Pilot Behavior |
+|---------------|-------------------|---------------------|
+| Phase 0 Q&A | Ask user 5W1H one-by-one | Auto-infer from raw idea + field survey |
+| Phase 0 summary confirmation | Wait for user OK | Auto-proceed, log to questions.md |
+| Phase 2 direction choice | AskUserQuestion with options | Always trigger Phase 2.5 Feasibility Scout |
+| Phase 2.5 confirmation | Wait for user to confirm recommendation | Auto-select best feasibility profile |
+| Phase 4 RQ/method confirmation | AskUserQuestion | Auto-proceed, log to questions.md |
+| Gate decision | Ask user to iterate or accept | Auto loop-back if NOT READY (max 4 iterations) |
+
+### Resume with User Overrides
+
+After reviewing the Proposal and `./ideation/questions.md`, the user can re-invoke this skill with override instructions:
+
+```
+"重新运行 ideation，修改决策 #2 为 Direction B"
+"Re-run ideation, override decision #3: use contrastive learning instead"
+```
+
+**Override protocol:**
+1. Read `./ideation/questions.md` — load all prior auto-decisions
+2. Apply user overrides to the specified decision numbers
+3. Determine the **earliest affected phase** (e.g., overriding direction → Phase 2)
+4. Re-run from that phase forward, keeping unaffected prior decisions
+5. Regenerate all three Proposal files with updated Section 9
 
 ---
 
@@ -61,14 +97,16 @@ Persist loop state to `./ideation/state.md` so the session can be resumed.
 | Phase | Tool | Purpose |
 |-------|------|---------|
 | Phase 0 | `WebSearch` | Field survey — dominant paradigms, key labs, breakthroughs, open problems |
-| Phase 0 | (text output) | Background Briefing — educate user on field landscape before Q&A |
+| Phase 0 | (text output) | Background Briefing — educate user on field landscape |
+| Phase 0 | `Write` | Auto-infer 5W1H, log decisions to `./ideation/questions.md` |
 | Phase 1 | `WebSearch` | Search arXiv, Semantic Scholar, Google Scholar for 10-15 papers |
-| Phase 2 | `AskUserQuestion` | Present 2-3 directions with trade-offs for user choice (includes "All sound good" option) |
-| Phase 2.5 | `WebSearch` | Feasibility Scout — quick-check each direction (2-3 searches each) when user has no preference |
+| Phase 2 | `Write` | Log 2-3 proposed directions and trade-offs to `./ideation/questions.md` |
+| Phase 2.5 | `WebSearch` | Feasibility Scout — quick-check all directions (always triggered) |
+| Phase 2.5 | `Write` | Log feasibility comparison and auto-selected direction to `./ideation/questions.md` |
 | Phase 3 | `WebSearch` | Deep search for 20-30 focused papers on the chosen direction |
 | Phase 4 | `WebSearch` | Search for theoretical tools, proof techniques, and related formal analysis |
-| Phase 4 | `AskUserQuestion` | Confirm research question, theory, method, and experiment plan |
-| Gate | `AskUserQuestion` | Present score card, ask whether to iterate or proceed |
+| Phase 4 | `Write` | Log SMART RQ and method design decisions to `./ideation/questions.md` |
+| Gate | `Write` | Log score card and loop-back decision to `./ideation/questions.md` |
 | Proposal | `Write` | Generate `./Proposal.md`, `./Proposal.html`, `./Proposal_cn.html` |
 | All | `TodoWrite` | Track current phase and progress within each phase |
 
@@ -114,7 +152,7 @@ At every decision point, strip away assumptions and reason from fundamentals:
 
 ## Phase 0: Capture the Spark
 
-**Goal:** Understand the raw idea well enough to search meaningfully. Do a field survey first, then present a comprehensive background briefing to the user before asking any questions.
+**Goal:** Understand the raw idea well enough to search meaningfully. Do a field survey first, then present a background briefing, then auto-infer all 5W1H dimensions.
 
 ### Step 0 — Field Survey (silent research, before any user interaction)
 
@@ -130,9 +168,9 @@ Example search queries for a topic like "EEG-based emotion recognition":
 - `"affective computing" EEG deep learning NeurIPS OR ICML OR ICLR`
 - `"EEG decoding" benchmark dataset state-of-the-art`
 
-### Step 1 — Background Briefing (MUST present to user before asking any questions)
+### Step 1 — Background Briefing (MUST present to user before auto-inference)
 
-**This step is mandatory.** After completing the field survey, write and present a structured background briefing to the user. The briefing educates the user on the current state of the field so they can make informed decisions during the Q&A that follows. The briefing should be written in the user's language and cover:
+**This step is mandatory.** After completing the field survey, write and present a structured background briefing to the user. The briefing educates the user on the current state of the field and provides context for the auto-inferred decisions that follow. The briefing should be written in the user's language and cover:
 
 ```markdown
 ## 🔍 Field Background Briefing: [Topic Area]
@@ -165,37 +203,37 @@ landscape above. This is a preliminary assessment — we'll refine it together.]
 - Must explicitly connect the user's raw idea to the landscape (the "Where Your Idea Fits" section)
 - Length: 400-800 words (enough to be informative, not so long it's overwhelming)
 
-After presenting the briefing, pause briefly to let the user absorb it, then proceed to the Q&A.
+After presenting the briefing, proceed immediately to auto-inference (no pause needed in auto-pilot mode).
 
-### Step 2 — Interactive Q&A (one question at a time)
+### Step 2 — Auto-Infer 5W1H (no user interaction)
 
-**Interaction rules:**
-- Ask questions **one at a time**. Never ask multiple questions in one message.
-- **Always use the `AskUserQuestion` tool** for multiple-choice questions — it renders a proper interactive dialog with labeled options and descriptions. Do NOT present choices as plain text lists.
-- **Each option must have a `description`** that explains what it means, its implications, and the key trade-off — never list bare option names. Do not ask bare questions like "What method do you want to use?" without explaining what the main method families are.
-- Use `preview` for options that benefit from visual comparison (e.g., method sketches, architecture diagrams in ASCII).
-- Use `multiSelect: true` only when choices are genuinely non-exclusive (e.g., "which aspects matter to you?").
-- Fall back to open-ended text only for questions that have no enumerable options.
-- **Context from briefing**: Reference specific findings from the Background Briefing when asking questions — e.g., "In the briefing, we saw that Method X struggles with Y. Given this, which approach appeals to you?"
-- **Stop condition**: Stop asking once you can answer all 6 dimensions with reasonable confidence. Specifically, you should be able to write a coherent 1-paragraph summary that covers What (specific problem), Why (motivation), Who (audience), and How (initial approach). When/Where may remain partially open — that is acceptable.
+**In auto-pilot mode, do NOT call `AskUserQuestion`.** Instead, infer all 5W1H dimensions from the raw idea + field survey results.
+
+**Auto-inference rules:**
+- For each 5W1H dimension, synthesize the best answer from: (1) the user's raw idea text, (2) the field survey findings, (3) common sense about the research landscape
+- Mark each inference with a **confidence level** (High / Medium / Low) — Low confidence items are flagged as priority override candidates
+- Use field survey findings to fill gaps — e.g., if the user didn't specify a target venue, infer from the topic area; if no method preference, infer from dominant paradigms
+- Prefer conservative, feasible choices when information is ambiguous
 
 **5W1H checklist** (continuously revisited throughout all phases — see below):
 
-| Dimension | Core Question | Example Follow-up Questions |
-|-----------|--------------|----------------------------|
-| **What** | What problem or phenomenon do you want to study? | "Can you describe a specific failure case?", "What would a solution look like in practice?" |
-| **Why** | Why does this problem matter? What is currently broken? | "What happens if this problem is not solved?", "Is this a bottleneck for a larger goal?" |
-| **Who** | Who cares — which research community, which application users? | "Which conference would you submit this to?", "Who would use this in production?" |
-| **When** | What is the timing context? New capability, new dataset, new regulation? | "Has anything changed recently that makes this newly possible?", "Are there upcoming deadlines?" |
-| **Where** | Which domain or application scenario? | "Is this specific to one domain or generalizable?", "Which datasets or benchmarks are standard here?" |
-| **How** | Any early intuition about the method or technical approach? | "Do you have a preference for a method family?", "What resources (GPU, data) do you have access to?" |
+| Dimension | Core Question | Auto-Inference Source |
+|-----------|--------------|---------------------|
+| **What** | What problem or phenomenon to study? | User's raw idea + field survey open problems |
+| **Why** | Why does this problem matter? | Field survey: community interest, active debates, practical impact |
+| **Who** | Target community and application users? | Infer from topic → most relevant top venue (NeurIPS/ICML/ICLR/ACL/KDD) |
+| **When** | Timing context? | Field survey: recent breakthroughs, new capabilities, trending topics |
+| **Where** | Domain or application scenario? | User's raw idea + field survey: standard benchmarks and datasets |
+| **How** | Method or technical approach? | Field survey: dominant paradigms + identified gaps → most promising approach |
 
-**Output of Phase 0:** A 1-paragraph idea summary written back to the user for confirmation before proceeding.
+**Log to `./ideation/questions.md`:** For each 5W1H dimension, record the question, context, auto-inferred answer, reasoning, and confidence level.
+
+**Output of Phase 0:** A 1-paragraph idea summary presented to the user as text output, then auto-proceed to Phase 1.
 
 **Output quality checklist:**
 - [ ] All 6 dimensions (What/Why/Who/When/Where/How) are addressed, even if some are tentative
 - [ ] The summary is specific enough to generate meaningful search queries
-- [ ] The user has confirmed the summary before proceeding
+- [ ] Each auto-inference is logged to `./ideation/questions.md` with confidence level
 
 ---
 
@@ -262,15 +300,7 @@ Direction C: [Title]
 My recommendation: Direction [X], because ...
 ```
 
-**User checkpoint:** Present directions via `AskUserQuestion` with the following options:
-- One option per proposed direction (A, B, C), each with a description summarizing its trade-offs
-- **Always include a final option: "All sound good — you recommend"** with description: "I don't have a strong preference. Run a quick feasibility check on all directions and pick the most viable one."
-
-When the user selects "All sound good" (or responds with equivalent phrases like "都可以", "any is fine", "you decide"), **trigger Phase 2.5: Feasibility Scout** before proceeding to Phase 3.
-
-When the user selects a specific direction, skip Phase 2.5 and go directly to Phase 3.
-
-Do NOT proceed to Phase 3 until direction is confirmed (either by user choice or by scout recommendation).
+**Auto-pilot behavior:** After proposing 2-3 directions, **always proceed to Phase 2.5 Feasibility Scout** to validate all directions before committing. Do NOT call `AskUserQuestion`. Log the proposed directions and their trade-offs to `./ideation/questions.md`.
 
 **Output quality checklist:**
 - [ ] Exactly 2-3 directions proposed (not 1, not 4+)
@@ -278,15 +308,15 @@ Do NOT proceed to Phase 3 until direction is confirmed (either by user choice or
 - [ ] Each direction includes feasibility signals (datasets, baselines, compute)
 - [ ] A clear recommendation is given with reasoning
 - [ ] Gap analysis references specific papers from Phase 1 landscape table
-- [ ] "All sound good" option is always included in AskUserQuestion
+- [ ] All directions and trade-offs are logged to `./ideation/questions.md`
 
 ---
 
-## Phase 2.5: Feasibility Scout (conditional — only when user has no preference)
+## Phase 2.5: Feasibility Scout (always triggered in auto-pilot)
 
-**Trigger:** The user selected "All sound good — you recommend" in Phase 2, or responded with equivalent phrases ("都可以", "any is fine", "you decide", "no preference").
+**Trigger:** Always runs after Phase 2 in auto-pilot mode. This replaces the previous user choice step.
 
-**Goal:** Quickly validate the feasibility of all 2-3 proposed directions before committing to the expensive Phase 3 deep-dive. Catch dead-end paths early with minimal search cost.
+**Goal:** Quickly validate the feasibility of all 2-3 proposed directions before committing to the expensive Phase 3 deep-dive. Auto-select the direction with the best feasibility-significance profile.
 
 **For each proposed direction, run 2-3 targeted WebSearches to check:**
 1. **Dataset availability** — Are there public, commonly-used datasets for this direction? Are they accessible?
@@ -312,16 +342,16 @@ Do NOT proceed to Phase 3 until direction is confirmed (either by user choice or
 **Eliminated:** Direction [Z] has a critical blocker: [specific issue].
 ```
 
-**After presenting the table:**
-- Explain the recommendation clearly, connecting feasibility findings to the user's context
-- Let the user confirm or override the recommendation before proceeding to Phase 3
-- If the user disagrees, they can pick any direction — the scout is advisory, not binding
+**Auto-pilot behavior after producing the table:**
+- **Auto-select** the direction with the best feasibility profile, prioritizing: feasibility > significance > low concurrent-work risk > novelty
+- Log the full Feasibility Comparison Table, the selected direction, runner-up, and eliminated directions to `./ideation/questions.md`
+- Proceed directly to Phase 3 with the selected direction
 
 **Output quality checklist:**
 - [ ] All proposed directions are scouted (not just the recommended one)
 - [ ] Each feasibility dimension has specific evidence (paper names, dataset names, code links), not just ✅/❌
 - [ ] A clear recommendation is given with reasoning tied to the feasibility findings
-- [ ] The user is asked to confirm before proceeding
+- [ ] Full comparison table and selection rationale are logged to `./ideation/questions.md`
 
 **Cost budget:** ~6-9 WebSearches total (2-3 per direction). This is much cheaper than a full Phase 3 deep-dive (20-30 papers) on the wrong path.
 
@@ -430,7 +460,12 @@ Evaluate the current idea state on four dimensions. Score each 1-5.
   - Low Soundness → back to Phase 4 (strengthen the method sketch)
   - Low Feasibility → back to Phase 4 (adjust scope or resources)
 
-Show the score card to the user at every gate check. Let them decide whether to continue refining or accept the current state.
+**Auto-pilot gate behavior:**
+- **READY:** Proceed directly to Proposal generation.
+- **NOT READY:** Automatically loop back to the appropriate phase based on the weakest dimension. Log the gate score, weakest dimension, and loop-back decision to `./ideation/questions.md`.
+- **Max 4 iterations:** If after 4 gate checks the idea still does not pass, generate the Proposal anyway with a caveat note in Section 9. Log all gate scores and the decision to proceed despite not passing.
+
+Present the score card as text output (for the user to see in real-time) but do NOT wait for user input.
 
 ---
 
@@ -446,7 +481,7 @@ Generated only after passing the Conference Readiness Gate (or explicit user ove
 | `./Proposal.html` | HTML | English | Readable standalone document with styling |
 | `./Proposal_cn.html` | HTML | Chinese | Chinese translation for local collaboration |
 
-All three files share the same 8-section structure. The HTML files should include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
+All three files share the same 9-section structure (Sections 1-8 are content; Section 9 is the auto-pilot decision log). The HTML files should include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
 
 ### Proposal Structure
 
@@ -541,6 +576,37 @@ Source: ./ideation/log.md
 | YYYY-MM-DD | N | Direction pivot / Scope change / Method revision / ... | [description] | [reason] | [result] |
 ]
 
+## 9. Alternative Directions & Auto-Decisions
+[This section is generated from ./ideation/questions.md. It provides full
+transparency into every autonomous decision made during the ideation process.]
+
+### Decision Log
+
+| # | Phase | Question | Context | Auto-Choice | Reasoning | Confidence |
+|---|-------|----------|---------|-------------|-----------|------------|
+| 1 | Phase 0 | What problem? | [field survey context] | [auto-inferred] | [why] | High/Med/Low |
+| 2 | Phase 0 | Why important? | [field survey context] | [auto-inferred] | [why] | High/Med/Low |
+| ... | ... | ... | ... | ... | ... | ... |
+| N | Phase 2.5 | Direction | [feasibility scout results] | Direction X | [feasibility reasoning] | High |
+
+### Explored but Not Chosen
+
+#### Direction [Y]: [Title]
+- Core claim: ...
+- Feasibility profile: ...
+- Why not chosen: ...
+- Under what conditions it becomes better: ...
+
+#### Direction [Z]: [Title]
+- ...
+
+### How to Override
+To modify any decision, re-invoke this skill with instructions like:
+- "重新运行 ideation，修改决策 #N 为 [你的选择]"
+- "Re-run ideation, override decision #N: [your choice]"
+
+The pipeline will re-run from the earliest affected phase forward.
+
 ---
 
 ## Appendix
@@ -571,7 +637,8 @@ All session data lives under `./ideation/`:
 ├── log.md        ← append-only history of every attempt and score
 ├── papers.md     ← append-only index of all papers ever retrieved
 ├── literature.md ← structured analysis notes from Phase 3 deep dive
-└── theory.md     ← problem formalization and theoretical analysis from Phase 4
+├── theory.md     ← problem formalization and theoretical analysis from Phase 4
+└── questions.md  ← auto-pilot decision log (append-only) — source for Proposal Section 9
 
 ./Proposal.md      ← final proposal (English, Markdown) — written only after Gate passes
 ./Proposal.html    ← final proposal (English, styled HTML with KaTeX)
@@ -665,20 +732,68 @@ Append one entry per completed phase or gate check. Never overwrite. This is the
 
 ---
 
+### questions.md — Auto-Pilot Decision Log
+
+Append new decisions as they are made in each phase. Never overwrite existing entries. This file is the source for Section 9 of the Proposal.
+
+```markdown
+# Auto-Pilot Decision Log
+
+## Decision #1 — Phase 0: Problem Definition (What)
+**Question:** What specific problem does this research address?
+**Context:** [field survey findings relevant to this dimension]
+**Auto-Choice:** [inferred answer]
+**Reasoning:** [why this inference, based on what evidence]
+**Confidence:** High / Medium / Low
+
+---
+
+## Decision #2 — Phase 0: Motivation (Why)
+**Question:** Why does this problem matter?
+**Context:** [field survey findings on community interest, practical impact]
+**Auto-Choice:** [inferred answer]
+**Reasoning:** [why]
+**Confidence:** High / Medium / Low
+
+---
+
+## Decision #N — Phase 2.5: Research Direction
+**Question:** Which research direction to pursue?
+**Options:**
+- A: [title + one-line summary + feasibility score]
+- B: [title + one-line summary + feasibility score]
+- C: [title + one-line summary + feasibility score]
+**Context:** [Feasibility Comparison Table summary]
+**Auto-Choice:** Direction [X]
+**Reasoning:** [Best feasibility profile because: datasets available, baselines reproducible, low concurrent risk]
+**Confidence:** High
+
+---
+
+## Decision #M — Gate: Iteration Loop-Back
+**Question:** Iterate or proceed?
+**Context:** [Gate score: N:X S:X T:X F:X = XX/20, weakest: dimension]
+**Auto-Choice:** Loop back to Phase [N] / Proceed to Proposal
+**Reasoning:** [weakest dimension analysis]
+**Confidence:** High
+```
+
+---
+
 ## Key Interaction Principles
 
-1. **One question at a time** — never overwhelm with multiple questions
-2. **Use `AskUserQuestion` for choices** — always use the tool for multiple-choice questions; each option must have a description explaining its implications; use `preview` for visual comparisons
-3. **Context-rich questions** — every question must include enough background for the user to make an informed choice; never ask bare questions
-3. **Always propose 2-3 options** — never commit to one path without alternatives
+1. **Auto-pilot by default** — run the full pipeline without user interaction; do NOT call `AskUserQuestion`
+2. **Log every auto-decision** — every decision that would have required user input must be recorded in `./ideation/questions.md` with question, context, auto-choice, reasoning, and confidence
+3. **Always propose 2-3 options internally** — never commit to one path without considering alternatives; log all options even if only one is chosen
 4. **Literature first, speculation second** — every claim must be grounded in papers
 5. **First principles always on** — at every decision point, decompose to fundamentals, challenge inherited assumptions, and rebuild from scratch (see "Two Persistent Mental Frameworks" above)
 6. **5W1H is a living model** — revisit all six dimensions after every new piece of evidence, not just in Phase 0
-7. **Show scores at every gate** — keep the user informed of idea quality
-8. **Explicit user checkpoints** — wait for confirmation at Phase 0, 2, and Gate
+7. **Show scores at every gate** — present gate scores as text output (visible to user in real-time) but do not pause
+8. **Feasibility-first selection** — when choosing between options, prioritize feasibility > significance > low risk > novelty
 9. **YAGNI for scope** — cut any claim or experiment that is not needed to demonstrate the core insight
-10. **Resume from state** — always check `./ideation/state.md` before starting; append to `./ideation/log.md` after every phase
-11. **Language matching** — detect the language of the user's message and use that language throughout the entire response, including all generated documents (state.md, log.md, literature.md, theory.md, Proposal.md, Proposal.html, Proposal_cn.html)
+10. **Resume from state** — always check `./ideation/state.md` and `./ideation/questions.md` before starting; append to `./ideation/log.md` after every phase
+11. **Language matching** — detect the language of the user's message and use that language throughout the entire response, including all generated documents (state.md, log.md, literature.md, theory.md, questions.md, Proposal.md, Proposal.html, Proposal_cn.html)
+12. **Override support** — when re-invoked with override instructions, read `./ideation/questions.md`, apply overrides, and re-run from the earliest affected phase
 
 ---
 
