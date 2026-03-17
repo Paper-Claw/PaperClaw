@@ -36,8 +36,10 @@ Raw Idea
 [Phase 3] Deep Dive           — 20-30 focused papers, detailed gap analysis
   │
   ▼
-[Phase 4] Sharpen             — SMART RQ, theory, method design, experiment plan
-  │
+[Phase 4] Sharpen             — SMART RQ, theory, Lean 4 verify, method design, experiment plan
+  │                             ├─ Lean 4 PASS → continue to Method Design
+  │                             ├─ Lean 4 FAIL (fixable) → retry Step 2 (max 5)
+  │                             └─ Lean 4 FAIL (fundamental) → escalate to earlier phase
   ▼
 [Gate]  Conference Readiness Check (Novelty / Significance / Soundness / Feasibility)
   │
@@ -72,6 +74,7 @@ When choosing between options, apply this priority order:
 | Phase 2 direction choice | AskUserQuestion with options | Always trigger Phase 2.5 Feasibility Scout |
 | Phase 2.5 confirmation | Wait for user to confirm recommendation | Auto-select best feasibility profile |
 | Phase 4 RQ/method confirmation | AskUserQuestion | Auto-proceed, log to questions.md |
+| Phase 4 Lean 4 verification | N/A (new) | Auto-retry on failure (max 5), auto-escalate if fundamental flaw |
 | Gate decision | Ask user to iterate or accept | Auto loop-back if NOT READY (max 4 iterations) |
 
 ### Resume with User Overrides
@@ -105,6 +108,8 @@ After reviewing the Proposal and `./ideation/questions.md`, the user can re-invo
 | Phase 2.5 | `Write` | Log feasibility comparison and auto-selected direction to `./ideation/questions.md` |
 | Phase 3 | `WebSearch` | Deep search for 20-30 focused papers on the chosen direction |
 | Phase 4 | `WebSearch` | Search for theoretical tools, proof techniques, and related formal analysis |
+| Phase 4 | `Bash` | Install Lean 4 locally via elan (if not present); run `lake build` to verify proofs |
+| Phase 4 | `Write` | Generate `.lean` files in `./ideation/lean4/`; log verification results to questions.md |
 | Phase 4 | `Write` | Log SMART RQ and method design decisions to `./ideation/questions.md` |
 | Gate | `Write` | Log score card and loop-back decision to `./ideation/questions.md` |
 | Proposal | `Write` | Generate `./Proposal.md`, `./Proposal.html`, `./Proposal_cn.html` |
@@ -406,6 +411,136 @@ Formalize the research problem mathematically and build theoretical justificatio
    - Information-theoretic arguments (lower bounds, capacity)
 4. **Key assumptions** — explicitly state all assumptions required for the theoretical results to hold
 
+### Step 2.5 — Lean 4 Formal Verification
+
+After generating `./ideation/theory.md`, formally verify key theoretical claims using Lean 4. This step creates a hard gate: if the core theorems cannot be machine-verified, the pipeline must fix the theory before proceeding to method design.
+
+#### 2.5.1 — Local Lean 4 Environment Setup
+
+All Lean 4 toolchains and binaries are kept **inside the project** to avoid polluting the global system.
+
+**First-time setup** (skip if `./ideation/lean4/.elan/bin/lean` already exists):
+
+1. Set local elan home and install elan locally:
+   ```bash
+   export ELAN_HOME="$(pwd)/ideation/lean4/.elan"
+   curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | ELAN_HOME="$(pwd)/ideation/lean4/.elan" sh -s -- -y --default-toolchain none
+   export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH"
+   ```
+2. Initialize the Lean 4 project:
+   ```bash
+   mkdir -p ./ideation/lean4 && cd ./ideation/lean4
+   echo "leanprover/lean4:v4.18.0-rc1" > lean-toolchain
+   lake init IdeationProofs
+   ```
+3. If Mathlib is needed (determined in step 2.5.3), add it to `lakefile.lean` and run:
+   ```bash
+   cd ./ideation/lean4 && lake update && lake exe cache get
+   ```
+
+**On subsequent runs:** Check `./ideation/lean4/.elan/bin/lean --version`. If present, just set `ELAN_HOME` and `PATH`, skip installation.
+
+**All Bash commands in this step MUST prefix with:**
+```bash
+export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH" &&
+```
+
+#### 2.5.2 — Identify Formalizable Claims
+
+Scan `./ideation/theory.md` and classify each theoretical claim:
+
+| Claim Type | Formalizable? | Example |
+|-----------|--------------|---------|
+| Convergence theorem | Yes | "Algorithm A converges at rate O(1/t)" |
+| Approximation bound | Yes | "Error ≤ epsilon for all inputs in class C" |
+| Algebraic property | Yes | "Operator T is a contraction mapping" |
+| Complexity bound | Yes | "Algorithm runs in O(n log n)" |
+| Generalization bound | Partially | PAC bounds — structure formalizable, constants may need sorry |
+| Empirical claim | No | "Method X outperforms Y on dataset Z" |
+| Intuitive argument | No | "This should work because..." |
+
+**Rules:**
+- Only formalize claims marked "Yes" or "Partially"
+- For "Partially" formalizable: formalize structure, use `sorry` for empirical sub-goals, document why
+- If NO claims are formalizable (purely empirical work) → skip this step, log skip decision to `./ideation/questions.md`, proceed to Step 3
+
+#### 2.5.3 — Generate Lean 4 Code
+
+For each formalizable claim, create a `.lean` file in `./ideation/lean4/IdeationProofs/`:
+
+**File naming:** `Theorem1.lean`, `Theorem2.lean`, etc. — one file per major theorem/proposition.
+
+**Code structure:**
+```lean
+/-
+  Theorem: [name from theory.md]
+  Source: theory.md, Section [N]
+  Claim: [natural language statement]
+-/
+import Mathlib.Topology.MetricSpace.Basic  -- import as needed
+
+-- Definitions
+def [relevant_definitions] := ...
+
+-- Main theorem
+theorem [theorem_name] : [formal_statement] := by
+  [proof_tactics]
+```
+
+**Guidelines:**
+- Import from Mathlib for standard math objects (metric spaces, norms, probability, measure theory)
+- Prefer simple tactic proofs (`simp`, `ring`, `omega`, `linarith`, `norm_num`) over term-mode
+- Every `sorry` must have a comment explaining why it cannot be proven at this stage
+- Register new files in `./ideation/lean4/IdeationProofs.lean` (the root file that imports all modules)
+
+#### 2.5.4 — Compile and Check
+
+```bash
+export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH" && cd ./ideation/lean4 && lake build
+```
+
+**Bash timeout:** 300000ms (5 minutes). First build with Mathlib can be slow.
+
+#### 2.5.5 — Result Classification
+
+| Result | Classification | Action |
+|--------|---------------|--------|
+| Build succeeds, no sorry | **FULL PASS** | Proceed to Step 3. Log success to questions.md. |
+| Build succeeds, sorry on empirical sub-goals only | **PARTIAL PASS** | Proceed to Step 3. Log sorry'd items to questions.md. |
+| Build fails: type mismatch / tactic failure | **Proof Error** | Analyze error → retry (counts toward limit). |
+| Build fails: unknown identifier / import error | **Syntax Error** | Fix imports/definitions → retry (does NOT count toward limit). |
+| Build fails: timeout / OOM | **Resource Error** | Simplify theorem → retry (counts toward limit). |
+
+#### 2.5.6 — Retry Logic
+
+**Max retries:** 5 proof-error attempts per gate iteration. Track in `./ideation/state.md` as `Lean4Attempt: N`.
+
+**On Proof Error (counts toward limit):**
+1. Parse Lean 4 error — identify which theorem and proof step failed
+2. Diagnose:
+   - **Wrong proof strategy** → rewrite tactics, keep theorem statement
+   - **Wrong theorem statement** → theory.md claim may be incorrect → update theory.md, regenerate .lean
+   - **Missing lemma** → add intermediate lemma and retry
+3. Log error, diagnosis, and fix plan to `./ideation/questions.md`
+4. Retry from step 2.5.3
+
+**On Syntax Error (does NOT count toward limit):** Fix and retry immediately.
+
+**After 5 failed attempts:**
+- If theorem *statement* kept changing across attempts → theory may be unsound → **escalate** (see 2.5.7)
+- If only proof *strategy* failed but statement seems correct → proceed to Step 3 with soundness penalty flag
+
+#### 2.5.7 — Escalation (Fundamental Flaw Detected)
+
+If 5 retries reveal the **approach itself is flawed** (not just a proof difficulty):
+1. Log to questions.md: "Lean 4 verification revealed fundamental flaw: [description]"
+2. Set `Lean4Escalation: true` in `./ideation/state.md`
+3. Do NOT proceed to Step 3. Instead loop back to:
+   - **Phase 4 Step 2** — if formalization needs rethinking (weaken assumptions, change bounds)
+   - **Phase 3** — if gap analysis needs revision (the approach itself is wrong)
+   - **Phase 2** — if the direction is fundamentally unsound
+4. This escalation is separate from the Gate loop-back — it happens within Phase 4 itself
+
 ### Step 3 — Method Design
 
 Describe the proposed method in detail. This should be concrete enough to serve as a blueprint for implementation:
@@ -430,6 +565,11 @@ Design a comprehensive experimental plan:
 - [ ] Research question satisfies all 5 SMART dimensions
 - [ ] Problem is formally defined with mathematical notation
 - [ ] At least one theoretical result (theorem, bound, or formal argument) is provided
+- [ ] Formalizable claims from theory.md are identified and classified
+- [ ] Lean 4 project exists in `./ideation/lean4/` (or skip justified for purely empirical work)
+- [ ] All formalizable theorems have corresponding `.lean` files
+- [ ] `lake build` passes (full or partial pass with documented sorry items)
+- [ ] Every Lean 4 attempt is logged to `./ideation/questions.md`
 - [ ] Method description names specific techniques with enough detail for implementation
 - [ ] At least 1 dataset and 1 metric are named explicitly
 - [ ] Experimental plan includes main comparison, ablation, and analysis experiments
@@ -452,12 +592,19 @@ Evaluate the current idea state on four dimensions. Score each 1-5.
 
 **Readiness threshold:** Total ≥ 16/20, with no single dimension below 3.
 
+**Lean 4 Verification Factor (adjusts Technical Soundness score):**
+- FULL PASS (no sorry): Soundness +1 (cap at 5)
+- PARTIAL PASS (sorry only on empirical sub-goals): no adjustment
+- Skipped (no formalizable claims): no adjustment
+- FAIL after 5 retries (proceeded anyway): Soundness -1 (floor at 1)
+- Escalation triggered: Soundness automatically ≤ 2 (triggers loop-back)
+
 **Gate outcome:**
 - **READY (≥16, no dim <3):** Proceed to Research Proposal generation.
 - **NOT READY:** Report the weakest dimension, explain what is missing, propose a targeted improvement task, and loop back:
   - Low Novelty → back to Phase 2 (find a sharper angle or different direction)
   - Low Significance → back to Phase 0/2 (reframe problem or switch domain)
-  - Low Soundness → back to Phase 4 (strengthen the method sketch)
+  - Low Soundness → back to Phase 4 (strengthen the method sketch; if Lean 4 verification failed, re-examine theory.md and retry verification)
   - Low Feasibility → back to Phase 4 (adjust scope or resources)
 
 **Auto-pilot gate behavior:**
@@ -638,7 +785,16 @@ All session data lives under `./ideation/`:
 ├── papers.md     ← append-only index of all papers ever retrieved
 ├── literature.md ← structured analysis notes from Phase 3 deep dive
 ├── theory.md     ← problem formalization and theoretical analysis from Phase 4
-└── questions.md  ← auto-pilot decision log (append-only) — source for Proposal Section 9
+├── questions.md  ← auto-pilot decision log (append-only) — source for Proposal Section 9
+└── lean4/                ← Lean 4 formal verification project
+    ├── .elan/            ← local elan installation (toolchains, binaries — NOT committed to git)
+    ├── lean-toolchain
+    ├── lakefile.lean
+    ├── IdeationProofs.lean
+    └── IdeationProofs/
+        ├── Basic.lean
+        ├── Theorem1.lean
+        └── ...
 
 ./Proposal.md      ← final proposal (English, Markdown) — written only after Gate passes
 ./Proposal.html    ← final proposal (English, styled HTML with KaTeX)
@@ -683,6 +839,9 @@ Overwrite this file after every phase transition. It always reflects the latest 
 **Iteration:** [N]
 **Direction:** [chosen direction title, or "TBD"]
 **Last Score:** N: X/5 | S: X/5 | T: X/5 | F: X/5 | Total: XX/20  (or "-" if not yet scored)
+**Lean4Status:** [not_started / in_progress / pass / partial_pass / fail / skipped / escalated]
+**Lean4Attempt:** [0-5]
+**Lean4Escalation:** [true / false]
 **Next Action:** [what to do when this session resumes]
 **Updated:** [YYYY-MM-DD]
 ```
@@ -767,6 +926,18 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 **Auto-Choice:** Direction [X]
 **Reasoning:** [Best feasibility profile because: datasets available, baselines reproducible, low concurrent risk]
 **Confidence:** High
+
+---
+
+## Decision #L — Phase 4: Lean 4 Verification (Attempt M/5)
+**Question:** Do the key theoretical claims formally verify in Lean 4?
+**Formalizable Claims:** [list of claims attempted]
+**Result:** [FULL PASS / PARTIAL PASS / FAIL: error description]
+**Sorry Items:** [list with justification, or "none"]
+**Error Analysis:** [for failures: what went wrong, diagnosis, planned fix]
+**Auto-Choice:** [Proceed to Step 3 / Retry with fix / Escalate to Phase N]
+**Reasoning:** [why this choice]
+**Confidence:** High / Medium / Low
 
 ---
 

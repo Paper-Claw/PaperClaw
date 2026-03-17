@@ -78,12 +78,17 @@ When the Gate score reveals a weak dimension, run one of these targeted tasks in
 2. Find 1-2 papers that establish the theoretical or empirical foundation for that claim
 3. Sketch a 3-step technical pipeline: input → transformation → output
 4. Identify the key design choice that makes this method work (and why alternatives fail)
+5. If Lean 4 verification previously failed, re-examine theorem statements in theory.md before regenerating proofs
+6. Consider weakening theoretical claims (looser bounds, stronger assumptions) to make them provable
 
 **Common fixes:**
 - Replace vague verbs ("improve", "enhance") with specific operations
 - Anchor the method in an existing technique and state the delta clearly
 - Specify the loss function, objective, or optimization procedure
 - Write a pseudocode-level description of the core algorithm
+- If Lean 4 fails on a convergence proof, check if the claimed rate is too tight — try a weaker rate first
+- If Lean 4 fails on a bound, verify assumptions are sufficient — missing assumptions are the #1 cause
+- Consider splitting a complex theorem into smaller, independently verifiable lemmas
 
 ### Experimental Feasibility < 3
 

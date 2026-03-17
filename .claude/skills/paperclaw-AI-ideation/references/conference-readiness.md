@@ -86,6 +86,15 @@ Is the method well-defined and are the claims defensible?
 - Comparison against weak or unfair baselines
 - No way to measure the property that was claimed to improve
 
+**Lean 4 Formal Verification Bonus/Penalty:**
+
+Lean 4 verification results adjust the Technical Soundness score:
+- Full verification (no sorry): +1 to Soundness (demonstrates rigorous theoretical grounding, cap at 5)
+- Partial verification (sorry on empirical sub-goals): no change
+- Verification skipped (no formalizable claims): no change
+- Verification failed after 5 retries: -1 to Soundness (theoretical claims may be unsound, floor at 1)
+- Verification escalation: Soundness capped at 2 (fundamental theoretical issues detected)
+
 ---
 
 ### Dimension 4: Experimental Feasibility (F)
