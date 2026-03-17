@@ -19,9 +19,9 @@ Does the work make a claim that has not been made before?
 | Score | Meaning |
 |-------|---------|
 | 5 | Defines a new problem, proposes a fundamentally new method, or demonstrates a result that contradicts existing understanding |
-| 4 | New combination of ideas, new application of existing method to a clearly unstudied domain, or new empirical finding with theoretical justification |
-| 3 | Meaningful improvement over prior work with a clear technical reason why it works better |
-| 2 | Incremental improvement; the core idea appears in prior work with minor variation |
+| 4 | Introduces a genuinely new technical mechanism or theoretical insight that did not exist before; the novelty is in the METHOD itself, not merely in where it is applied |
+| 3 | Meaningful adaptation of existing methods to a new domain or setting, with non-trivial technical modifications required to make it work; OR a new combination of ideas that produces emergent properties not present in any individual component |
+| 2 | Straightforward application of existing method(s) to a new domain with minor modifications; the core technique is known, the transfer is the contribution |
 | 1 | Reproduces existing work with no new contribution |
 
 **Top-venue novelty patterns that work:**
@@ -34,6 +34,14 @@ Does the work make a claim that has not been made before?
 - "We are the first to combine A and B" — not sufficient unless the combination is non-trivial
 - "We improve accuracy by X%" — not sufficient unless the improvement has an explanation
 - "Concurrent work" — if someone else published the same idea in the past 3 months, the novelty is weakened but not eliminated
+- "We apply proven technique X to unstudied domain Y" — this is a Score 2-3 contribution, NOT Score 4. Score 4 requires that the METHOD itself contains a new mechanism. The novelty lies in what technical challenges the transfer required, not the transfer itself.
+
+**Novelty self-test for Score 4:**
+> "If I remove the domain/application context, is there still a new technical idea here
+> that would interest researchers working on different problems?"
+> If yes → Score 4. If the novelty disappears without the domain context → Score 2-3.
+
+**Domain-specific novelty calibration:** See `references/domain.md` "Domain-Specific Novelty Calibration" section for field-specific scoring examples.
 
 ---
 
@@ -91,7 +99,8 @@ Is the method well-defined and are the claims defensible?
 Lean 4 verification results adjust the Technical Soundness score:
 - Full verification (no sorry): +1 to Soundness (demonstrates rigorous theoretical grounding, cap at 5)
 - Partial verification (sorry on empirical sub-goals): no change
-- Verification skipped (no formalizable claims): no change
+- Verification skipped (all 3 skip conditions met — no formalizable claims): no change
+- Verification skipped WITHOUT meeting all 3 skip conditions: -1 to Soundness (unjustified skip of verification)
 - Verification failed after 5 retries: -1 to Soundness (theoretical claims may be unsound, floor at 1)
 - Verification escalation: Soundness capped at 2 (fundamental theoretical issues detected)
 
@@ -170,7 +179,7 @@ Total ≥ 16 AND all dims ≥ 3?
   NO  →
     N < 3? → Phase 2: find sharper angle
     S < 3? → Phase 0/2: reframe problem importance
-    T < 3? → Phase 4: strengthen method sketch
+    T < 3? → Phase 4: strengthen method sketch; if Lean 4 verification failed, re-examine theory.md and retry
     F < 3? → Phase 4: reduce scope, find public resources
     Multiple dims weak? → Consider direction change (Phase 2)
 ```

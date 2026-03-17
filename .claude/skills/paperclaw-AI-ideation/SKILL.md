@@ -112,7 +112,8 @@ After reviewing the Proposal and `./ideation/questions.md`, the user can re-invo
 | Phase 4 | `Write` | Generate `.lean` files in `./ideation/lean4/`; log verification results to questions.md |
 | Phase 4 | `Write` | Log SMART RQ and method design decisions to `./ideation/questions.md` |
 | Gate | `Write` | Log score card and loop-back decision to `./ideation/questions.md` |
-| Proposal | `Write` | Generate `./Proposal.md`, `./Proposal.html`, `./Proposal_cn.html` |
+| Proposal | `Write` | Generate `./Proposal.md`, `./Proposal.html`, `./Proposal_cn.html`, `./reference.bib` |
+| Proposal | `WebSearch` | Search for official BibTeX entries (DBLP, Semantic Scholar) for `./reference.bib` |
 | All | `TodoWrite` | Track current phase and progress within each phase |
 
 **WebSearch best practices:**
@@ -459,7 +460,13 @@ Scan `./ideation/theory.md` and classify each theoretical claim:
 **Rules:**
 - Only formalize claims marked "Yes" or "Partially"
 - For "Partially" formalizable: formalize structure, use `sorry` for empirical sub-goals, document why
-- If NO claims are formalizable (purely empirical work) → skip this step, log skip decision to `./ideation/questions.md`, proceed to Step 3
+- **Skip is ONLY permitted when ALL 3 conditions hold:**
+  1. theory.md contains ZERO theorems, propositions, or lemmas (purely empirical/systems work)
+  2. No mathematical claims are made about convergence, bounds, complexity, or optimality
+  3. The work does not claim any theoretical advantage over existing methods
+  If ANY theorem, bound, or formal claim exists in theory.md, Lean 4 verification MUST be attempted.
+  Venue norms are NOT a valid skip reason.
+- When skipping, log to questions.md: the specific check against all 3 skip conditions (not just a venue justification)
 
 #### 2.5.3 — Generate Lean 4 Code
 
@@ -582,7 +589,7 @@ Evaluate the current idea state on four dimensions. Score each 1-5.
 
 | Dimension | Score | What to Check |
 |-----------|-------|---------------|
-| **Novelty** | /5 | Is the core insight new? Does it challenge or go beyond SOTA? |
+| **Novelty** | /5 | Is there a genuinely new contribution? Score 5: new problem or contradicts existing understanding. Score 4: new mechanism. Score 3: non-trivial adaptation with emergent properties. See `references/conference-readiness.md` and `references/domain.md` for calibration. |
 | **Significance** | /5 | Do top-venue researchers care? Is the problem important enough? |
 | **Technical Soundness** | /5 | Is the method theoretically grounded? Are claims testable? |
 | **Experimental Feasibility** | /5 | Can experiments be run with available compute and data? |
@@ -590,11 +597,12 @@ Evaluate the current idea state on four dimensions. Score each 1-5.
 **Readiness threshold:** Total ≥ 16/20, with no single dimension below 3.
 
 **Lean 4 Verification Factor (adjusts Technical Soundness score):**
-- FULL PASS (no sorry): Soundness +1 (cap at 5)
-- PARTIAL PASS (sorry only on empirical sub-goals): no adjustment
-- Skipped (no formalizable claims): no adjustment
-- FAIL after 5 retries (proceeded anyway): Soundness -1 (floor at 1)
-- Escalation triggered: Soundness automatically ≤ 2 (triggers loop-back)
+- FULL PASS (no sorry): +1 to Soundness (cap at 5)
+- PARTIAL PASS (sorry only on empirical sub-goals): no change
+- Skipped (all 3 skip conditions met — no formalizable claims): no change
+- Skipped WITHOUT meeting all 3 skip conditions: -1 to Soundness (unjustified skip of verification)
+- FAIL after 5 retries (proceeded anyway): -1 to Soundness (floor at 1)
+- Escalation triggered: Soundness capped at 2 (fundamental theoretical issues detected; triggers loop-back)
 
 **Gate outcome:**
 - **READY (≥16, no dim <3):** Proceed to Research Proposal generation.
@@ -617,17 +625,70 @@ Present the score card as text output (for the user to see in real-time) but do 
 
 Generated only after passing the Conference Readiness Gate (or explicit user override).
 
-**Three output files are produced:**
+**Four output files are produced:**
 
 | File | Format | Language | Purpose |
 |------|--------|----------|---------|
 | `./Proposal.md` | Markdown | English | Source of truth, version-controlled |
 | `./Proposal.html` | HTML | English | Readable standalone document with styling |
 | `./Proposal_cn.html` | HTML | Chinese | Chinese translation for local collaboration |
+| `./reference.bib` | BibTeX | N/A | BibTeX entries for all cited papers |
 
-All three files share the same 9-section structure (Sections 1-8 are content; Section 9 is the auto-pilot decision log). The HTML files should include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
+All three Proposal files share the same 10-section structure (Sections 1-8 are content; Section 9 is the auto-pilot decision log; Section 10 is the reference list). The HTML files should include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
+
+### HTML-Specific Rendering Rules
+
+The HTML files (`Proposal.html` and `Proposal_cn.html`) must use `<details>` and `<summary>` elements for the following content:
+
+1. **Detailed proofs** (Section 4): Each theorem's detailed proof is wrapped in a collapsible block. The proof outline remains visible (not collapsed). Only the detailed proof is collapsible. Default state: **collapsed**.
+   ```html
+   <details>
+   <summary>Detailed Proof of Theorem N</summary>
+   <div class="proof">[Full proof content with KaTeX math]</div>
+   </details>
+   ```
+
+2. **Lean 4 verification code** (Section 4): If Lean 4 verification was performed, include the `.lean` source for each theorem in a collapsible block. Default state: **collapsed**.
+   ```html
+   <details>
+   <summary>Lean 4 Verification Code — Theorem N</summary>
+   <pre><code class="language-lean">[Lean 4 source from ./ideation/lean4/IdeationProofs/]</code></pre>
+   <p><strong>Status:</strong> [FULL PASS / PARTIAL PASS (sorry items: ...) / FAIL]</p>
+   </details>
+   ```
+
+3. **CSS for collapsible sections** (add to the `<style>` block):
+   ```css
+   details { margin: 1em 0; border: 1px solid #ddd; border-radius: 6px; padding: 0.5em 1em; }
+   details[open] { background: #fafafa; }
+   summary { cursor: pointer; font-weight: bold; color: #2c3e50; padding: 0.3em 0; }
+   summary:hover { color: #3498db; }
+   .proof { margin-top: 0.5em; padding-left: 1em; border-left: 3px solid #3498db; }
+   ```
+
+The Markdown file (`Proposal.md`) includes both proof outlines and detailed proofs inline (no collapsing in Markdown). Lean 4 code is included as fenced code blocks.
+
+### reference.bib Generation
+
+After generating the three Proposal files, produce `./reference.bib` containing BibTeX entries for every paper cited in the proposal:
+
+1. Search for the official BibTeX entry (from the venue website, DBLP, or Semantic Scholar)
+2. If the official entry cannot be found via search, construct one from `./ideation/papers.md`:
+   ```bibtex
+   @inproceedings{AuthorYear,
+     title     = {Paper Title},
+     author    = {Author1 and Author2 and ...},
+     booktitle = {Venue Full Name},
+     year      = {Year},
+     note      = {BibTeX auto-generated -- verify before submission}
+   }
+   ```
+3. Use consistent cite keys: first author's surname + year (e.g., `Kwon2020`, `Hottung2022`)
+4. Mark auto-generated entries with `note = {BibTeX auto-generated}` so the user knows to verify
 
 ### Proposal Structure
+
+**Citation convention:** All sections use in-text citations as "[N]" referencing the numbered list in Section 10. Every paper mentioned by name MUST have a corresponding entry in Section 10 and in `./reference.bib`.
 
 ```markdown
 # Research Proposal: [Title]
@@ -647,34 +708,90 @@ address this. Ground every claim in literature. Target: 2-3 paragraphs.]
 Target: 1-2 paragraphs of intuition + formal mathematical definition.]
 
 ## 3. Related Work
-[Structured survey of existing work organized by method family or theme.
-For each group of related work:
-- What they solve and how
-- Their connection to the proposed problem
-- What remains unsolved (the gap)
-End with a clear statement of the research gap this proposal addresses.
+[Structured survey organized by method category. For EACH category, produce a
+dedicated table — do NOT use prose paragraphs.
+
+### 3.1 [Category Name 1]
+| Venue/Year | Paper | Technical Summary | Gap for Our Problem |
+|-----------|-------|-------------------|---------------------|
+| ... | ... | 1-2 sentences: what they do, how | What limitation remains relevant to our research question |
+
+### 3.2 [Category Name 2]
+| Venue/Year | Paper | Technical Summary | Gap for Our Problem |
+|-----------|-------|-------------------|---------------------|
+| ... | ... | ... | ... |
+
+(Repeat for 2-4 method categories, 3-8 papers per table.)
+
+### Research Gap Summary
+[One paragraph synthesizing the gaps from all tables into the specific niche
+this proposal fills. This paragraph should make it crystal clear why existing
+methods are insufficient and what opportunity remains.]
+
 Reference specific papers from ./ideation/papers.md and ./ideation/literature.md.
-Target: 3-5 paragraphs covering 2-3 method families.]
+Use in-text citations as "[N]" referencing the numbered list in Section 10.]
 
 ## 4. Theoretical Analysis
-[Mathematical foundation for the proposed approach.
-- Formal mathematical model of the proposed solution
-- Theorems with proofs (or proof sketches) showing why the approach works
-- Theoretical advantages over existing methods (tighter bounds, better rates, etc.)
-- Where applicable: generalization bounds, convergence rates, computational
-  complexity, information-theoretic arguments
-- Explicitly state all assumptions
-Source: ./ideation/theory.md
-Target: 1-3 theorems/propositions with proofs or proof sketches.]
+
+### 4.1 Why This Theory Is Needed
+[1-2 paragraphs explaining:
+- What specific limitation of existing methods this theory addresses
+- Why a theoretical foundation (not just empirical results) is necessary
+- How the theoretical results prove the method's superiority or correctness,
+  or demonstrate that existing methods are provably insufficient
+- What would go wrong without this theoretical grounding
+This subsection bridges Sections 2-3 (problems/gaps) and the formal results below.]
+
+### 4.2 Mathematical Foundation
+[Problem formalization with precise notation. Define input space, output space,
+objective function, constraints. Formal mathematical model of the proposed solution.]
+
+### 4.3 Main Theoretical Results
+[For EACH theorem/proposition, provide ALL of the following:
+
+**Theorem N: [Name]**
+- **Statement:** Formal mathematical statement with all variables defined
+- **Proof Outline:** 3-5 step high-level proof strategy (always visible in all formats)
+- **Detailed Proof:** Full proof with all steps justified (in Proposal.md: inline;
+  in HTML files: inside a collapsible `<details>` block, default collapsed)
+- **Lean 4 Verification:** Status (PASS / PARTIAL with sorry items / FAIL with explanation
+  / SKIPPED with justification). In HTML files: Lean 4 source code inside a collapsible
+  `<details>` block, default collapsed.
+- **Implications:** What this result means for the proposed method; how it addresses
+  a specific gap from Section 3
+
+Explicitly state all assumptions required for each result.
+Source: ./ideation/theory.md + ./ideation/lean4/
+Target: 1-3 theorems/propositions with BOTH proof outlines AND detailed proofs.]
 
 ## 5. Proposed Method
-[Detailed technical description of the method.
-- High-level overview (algorithm flow or architecture diagram in ASCII/text)
-- Key components and their roles
-- Training / inference procedure
-- Pseudocode for the core algorithm (if applicable)
-- How each component addresses a specific challenge from Section 2
-Target: 3-5 paragraphs + pseudocode or algorithm block.]
+
+### 5.1 Overview
+[High-level overview: algorithm flow or architecture diagram in ASCII/text.
+Pseudocode for the core algorithm.]
+
+### 5.2 Component Details
+[For EACH key component or design choice, provide ALL of the following:
+1. **What**: Technical description of the component
+2. **Why this design**: What specific problem or limitation motivated this choice
+   (reference specific papers/methods from Section 3 that have this limitation)
+3. **Why not alternatives**: What simpler or more obvious approaches were considered
+   and why they are insufficient
+4. **Advantage**: What concrete benefit this design provides (theoretical guarantee,
+   efficiency gain, robustness property, etc.)]
+
+### 5.3 Training / Inference Procedure
+[Step-by-step procedure with enough detail for implementation.
+Key hyperparameters and their roles.]
+
+### 5.4 Design Rationale Summary
+| Component | Addresses Limitation Of | Advantage Over Alternative |
+|-----------|------------------------|---------------------------|
+| [component 1] | [method X from Section 3] lacks... | [concrete advantage] |
+| [component 2] | [method Y from Section 3] fails when... | [concrete advantage] |
+| ... | ... | ... |
+
+Target: 4-7 paragraphs + pseudocode + rationale table.]
 
 ## 6. Experimental Design
 [Comprehensive experiment plan.
@@ -701,7 +818,7 @@ Target: 3-5 paragraphs + pseudocode or algorithm block.]
 
 ### 6.5 Expected Results
 [Quantitative predictions for main experiments. What margins of improvement
-are expected and why?]]
+are expected and why?]
 
 ## 7. Conclusion
 [Highlight the key contributions and expected impact.
@@ -722,16 +839,27 @@ Source: ./ideation/log.md
 
 ## 9. Alternative Directions & Auto-Decisions
 [This section is generated from ./ideation/questions.md. It provides full
-transparency into every autonomous decision made during the ideation process.]
+transparency into every autonomous decision made during the ideation process.
+
+**IMPORTANT:** The Context column is MANDATORY and must NOT be summarized or truncated.
+It is the user's primary way to evaluate whether auto-decisions were well-founded and
+to identify alternative exploration directions.]
 
 ### Decision Log
 
-| # | Phase | Question | Context | Auto-Choice | Reasoning | Confidence |
-|---|-------|----------|---------|-------------|-----------|------------|
-| 1 | Phase 0 | What problem? | [field survey context] | [auto-inferred] | [why] | High/Med/Low |
-| 2 | Phase 0 | Why important? | [field survey context] | [auto-inferred] | [why] | High/Med/Low |
+| # | Phase | Question | Context (Background + Options + Evidence) | Auto-Choice | Reasoning | Confidence |
+|---|-------|----------|------------------------------------------|-------------|-----------|------------|
+| 1 | Phase 0 | What problem? | [field survey findings: key papers, open challenges, gaps identified] | [choice] | [why] | High/Med/Low |
+| 2 | Phase 0 | Why important? | [field survey findings on community interest, practical impact] | [choice] | [why] | High/Med/Low |
 | ... | ... | ... | ... | ... | ... | ... |
-| N | Phase 2.5 | Direction | [feasibility scout results] | Direction X | [feasibility reasoning] | High |
+| N | Phase 2.5 | Direction | **Options:** A: [title] (★★★★★) / B: [title] (★★★☆☆) / C: [title] (★★☆☆☆). **Evidence:** [feasibility scout summary] | Direction X | [why] | High |
+
+**Generation rule:** When generating Section 9, read `./ideation/questions.md` entry by entry.
+For each decision, the Context column MUST contain:
+- For Phase 0 decisions: the field survey findings that informed the inference
+- For Phase 2/2.5 decisions: ALL proposed options with their feasibility scores
+- For Phase 4 decisions: the theoretical claims, Lean 4 results, and error analyses
+- For Gate decisions: the full score card with per-dimension justifications
 
 ### Explored but Not Chosen
 
@@ -750,6 +878,21 @@ To modify any decision, re-invoke this skill with instructions like:
 - "Re-run ideation, override decision #N: [your choice]"
 
 The pipeline will re-run from the earliest affected phase forward.
+
+## 10. References
+[Complete numbered reference list of all papers cited in the proposal.
+Every paper mentioned by name in Sections 1-7 MUST appear here.
+
+Format: numbered list, sorted by first author surname.
+
+[1] Author(s). "Paper Title." Venue, Year.
+[2] Author(s). "Paper Title." Venue, Year.
+...
+
+In-text citations throughout Sections 1-7 should use "[N]" format referencing
+this list (e.g., "POMO [3] exploits solution symmetries...").
+
+Source: ./ideation/papers.md and ./ideation/literature.md]
 
 ---
 
@@ -796,6 +939,7 @@ All session data lives under `./ideation/`:
 ./Proposal.md      ← final proposal (English, Markdown) — written only after Gate passes
 ./Proposal.html    ← final proposal (English, styled HTML with KaTeX)
 ./Proposal_cn.html ← final proposal (Chinese, styled HTML with KaTeX)
+./reference.bib    ← BibTeX entries for all cited papers
 ```
 
 **At session start:** read `./ideation/state.md` to resume from the correct phase and iteration. Also read `./ideation/papers.md` to know which papers have already been retrieved — do not re-search or re-summarize papers already recorded there.
@@ -928,8 +1072,13 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 
 ## Decision #L — Phase 4: Lean 4 Verification (Attempt M/5)
 **Question:** Do the key theoretical claims formally verify in Lean 4?
-**Formalizable Claims:** [list of claims attempted]
-**Result:** [FULL PASS / PARTIAL PASS / FAIL: error description]
+**Skip Eligibility Check (required if skipping):**
+- [ ] theory.md contains zero theorems/propositions/lemmas: [yes/no]
+- [ ] No mathematical claims about convergence/bounds/complexity: [yes/no]
+- [ ] No claimed theoretical advantage over existing methods: [yes/no]
+- All three must be "yes" to skip. If any is "no", verification MUST be attempted.
+**Formalizable Claims:** [list of claims attempted, or "N/A — skip justified with all 3 conditions met"]
+**Result:** [FULL PASS / PARTIAL PASS / FAIL: error description / SKIPPED: all 3 conditions met]
 **Sorry Items:** [list with justification, or "none"]
 **Error Analysis:** [for failures: what went wrong, diagnosis, planned fix]
 **Auto-Choice:** [Proceed to Step 3 / Retry with fix / Escalate to Phase N]
@@ -960,7 +1109,7 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 8. **Feasibility-first selection** — when choosing between options, prioritize feasibility > significance > low risk > novelty
 9. **YAGNI for scope** — cut any claim or experiment that is not needed to demonstrate the core insight
 10. **Resume from state** — always check `./ideation/state.md` and `./ideation/questions.md` before starting; append to `./ideation/log.md` after every phase
-11. **Language matching** — detect the language of the user's message and use that language throughout the entire response, including all generated documents (state.md, log.md, literature.md, theory.md, questions.md, Proposal.md, Proposal.html, Proposal_cn.html)
+11. **Language matching** — detect the language of the user's message and use that language for all working documents (state.md, log.md, literature.md, theory.md, questions.md) and conversational output. The Proposal files follow fixed language rules: Proposal.md and Proposal.html are always in English; Proposal_cn.html is always in Chinese; reference.bib is language-neutral.
 12. **Override support** — when re-invoked with override instructions, read `./ideation/questions.md`, apply overrides, and re-run from the earliest affected phase
 
 ---

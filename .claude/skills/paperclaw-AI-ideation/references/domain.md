@@ -141,6 +141,26 @@ Is the contribution primarily a new scientific understanding?
 
 ---
 
+## Domain-Specific Novelty Calibration
+
+Examples to calibrate novelty scoring for ML/AI research (referenced by `references/conference-readiness.md`):
+
+**Score 4 examples (genuinely new mechanism):**
+- Attention mechanism (Transformers) — new computation paradigm
+- Diffusion-based generation — new generative framework
+- In-context learning discovery — new capability finding
+- Mixture-of-Experts routing — new architecture paradigm
+
+**Score 2-3 examples (domain transfer, not new mechanism):**
+- Applying TTA/meta-learning/self-training from CV to a new problem domain
+- Adapting LoRA from LLMs to vision models
+- Using contrastive learning (established) for a new modality
+- Transferring RLHF from language models to other sequential decision tasks
+
+**Key principle:** In ML/AI, "first to apply X to domain Y" is typically Score 2-3. Score 4 requires that the adaptation introduces a mechanism that would be interesting even to researchers who don't work on domain Y.
+
+---
+
 ## Search Configuration
 
 ### Primary Databases
