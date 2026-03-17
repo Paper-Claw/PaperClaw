@@ -42,7 +42,7 @@ Raw Idea
 [Phase 3] Deep Dive           — 20-30 focused papers, detailed gap analysis
   │
   ▼
-[Phase 4] Sharpen             — SMART research question, experimental sketch
+[Phase 4] Sharpen             — SMART RQ, theory, method design, experiment plan
   │
   ▼
 [Gate]  Conference Readiness Check (Novelty / Significance / Soundness / Feasibility)
@@ -66,8 +66,10 @@ Persist loop state to `./ideation/state.md` so the session can be resumed.
 | Phase 2 | `AskUserQuestion` | Present 2-3 directions with trade-offs for user choice (includes "All sound good" option) |
 | Phase 2.5 | `WebSearch` | Feasibility Scout — quick-check each direction (2-3 searches each) when user has no preference |
 | Phase 3 | `WebSearch` | Deep search for 20-30 focused papers on the chosen direction |
-| Phase 4 | `AskUserQuestion` | Confirm research question and experimental sketch |
+| Phase 4 | `WebSearch` | Search for theoretical tools, proof techniques, and related formal analysis |
+| Phase 4 | `AskUserQuestion` | Confirm research question, theory, method, and experiment plan |
 | Gate | `AskUserQuestion` | Present score card, ask whether to iterate or proceed |
+| Proposal | `Write` | Generate `./Proposal.md`, `./Proposal.html`, `./Proposal_cn.html` |
 | All | `TodoWrite` | Track current phase and progress within each phase |
 
 **WebSearch best practices:**
@@ -214,9 +216,9 @@ After presenting the briefing, pause briefly to let the user absorb it, then pro
 
 **Produce a Landscape Table:**
 
-| Paper | Venue/Year | Core Claim | Method | Key Limitation |
-|-------|-----------|------------|--------|---------------|
-| ... | ... | ... | ... | ... |
+| Paper | Venue/Year | TLDR | Core Claim | Method | Key Limitation |
+|-------|-----------|------|------------|--------|---------------|
+| ... | ... | ... | ... | ... | ... |
 
 Present this table to the user as Phase 1 output before continuing.
 
@@ -348,26 +350,59 @@ Save to `./ideation/literature.md`.
 
 ## Phase 4: Sharpen the Research Question
 
-**Goal:** Produce a precise, SMART research question and experimental sketch.
+**Goal:** Produce a precise, SMART research question, a theoretical foundation, and a detailed experimental plan.
 
-**SMART criteria** (use `references/research-question-formulation.md`):
+### Step 1 — SMART Research Question
+
+Use `references/research-question-formulation.md`:
 - **Specific**: name the method, task, and scenario explicitly
 - **Measurable**: name the datasets and evaluation metrics
 - **Achievable**: check resource and time feasibility
 - **Relevant**: articulate academic and practical value
 - **Time-bound**: estimate 3-month and 6-month milestones
 
-**Experimental sketch:**
-- Proposed method (2-3 sentences)
-- Baselines to compare against
-- Datasets to use
-- Primary metric
-- Expected result (what does "better" look like?)
+### Step 2 — Problem Formalization & Theoretical Analysis
+
+Formalize the research problem mathematically and build theoretical justification for the proposed approach. Save to `./ideation/theory.md`.
+
+**Required content:**
+1. **Problem formalization** — define the problem with precise mathematical notation (input space, output space, objective function, constraints)
+2. **Mathematical model** — formulate the proposed approach as a formal optimization or learning problem
+3. **Theoretical justification** — prove or argue why the proposed solution is superior to existing methods. Include any of the following that apply:
+   - Theorems with proofs (e.g., convergence guarantees, approximation bounds)
+   - Generalization bounds (PAC-learning, Rademacher complexity, etc.)
+   - Convergence rate analysis (optimization perspective)
+   - Computational complexity analysis
+   - Information-theoretic arguments (lower bounds, capacity)
+4. **Key assumptions** — explicitly state all assumptions required for the theoretical results to hold
+
+### Step 3 — Method Design
+
+Describe the proposed method in detail. This should be concrete enough to serve as a blueprint for implementation:
+- Architecture or algorithm overview (with pseudocode or diagram if applicable)
+- Key components and their roles
+- Training/inference procedure
+- How the method addresses the identified gap
+
+### Step 4 — Experimental Plan
+
+Design a comprehensive experimental plan:
+- Datasets (with sizes, splits, preprocessing)
+- Baselines to compare against (with citations)
+- Evaluation metrics (primary and secondary)
+- Experiments to conduct:
+  - Main comparison with SOTA
+  - Ablation studies (which components contribute how much)
+  - Analysis experiments (visualization, case studies, sensitivity analysis)
+- Expected results (what does "better" look like, quantitatively?)
 
 **Output quality checklist:**
-- [ ] Research question satisfies all 5 SMART dimensions (Specific, Measurable, Achievable, Relevant, Time-bound)
-- [ ] Method description names specific techniques (not vague verbs like "improve" or "enhance")
+- [ ] Research question satisfies all 5 SMART dimensions
+- [ ] Problem is formally defined with mathematical notation
+- [ ] At least one theoretical result (theorem, bound, or formal argument) is provided
+- [ ] Method description names specific techniques with enough detail for implementation
 - [ ] At least 1 dataset and 1 metric are named explicitly
+- [ ] Experimental plan includes main comparison, ablation, and analysis experiments
 - [ ] Expected result is quantifiable or clearly falsifiable
 
 ---
@@ -403,46 +438,125 @@ Show the score card to the user at every gate check. Let them decide whether to 
 
 Generated only after passing the Conference Readiness Gate (or explicit user override).
 
-Save to `./ideation/proposal.md`:
+**Three output files are produced:**
+
+| File | Format | Language | Purpose |
+|------|--------|----------|---------|
+| `./Proposal.md` | Markdown | English | Source of truth, version-controlled |
+| `./Proposal.html` | HTML | English | Readable standalone document with styling |
+| `./Proposal_cn.html` | HTML | Chinese | Chinese translation for local collaboration |
+
+All three files share the same 8-section structure. The HTML files should include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
+
+### Proposal Structure
 
 ```markdown
 # Research Proposal: [Title]
 
-## One-Sentence Contribution
-[The single most important thing this paper does]
+## 1. Research Background
+[Why this problem matters. Describe the real-world or scientific significance of the
+problem. Include the broader context: what application domains are affected, what
+consequences arise from the current limitations, and why now is the right time to
+address this. Ground every claim in literature. Target: 2-3 paragraphs.]
 
-## Problem Statement
-[What is broken, why it matters, who cares]
+## 2. Research Problem
+[Formal problem definition. Start with an intuitive description, then formalize:
+- Define the input space, output space, and objective
+- State the problem mathematically (optimization, learning, inference)
+- Clarify what "solving" this problem means — what constitutes success
+- Highlight the key technical challenges that make this problem hard
+Target: 1-2 paragraphs of intuition + formal mathematical definition.]
 
-## Key Insight
-[The core idea that makes this work possible — the "aha" moment]
+## 3. Related Work
+[Structured survey of existing work organized by method family or theme.
+For each group of related work:
+- What they solve and how
+- Their connection to the proposed problem
+- What remains unsolved (the gap)
+End with a clear statement of the research gap this proposal addresses.
+Reference specific papers from ./ideation/papers.md and ./ideation/literature.md.
+Target: 3-5 paragraphs covering 2-3 method families.]
 
-## Proposed Method
-[2-3 paragraph description of the technical approach]
+## 4. Theoretical Analysis
+[Mathematical foundation for the proposed approach.
+- Formal mathematical model of the proposed solution
+- Theorems with proofs (or proof sketches) showing why the approach works
+- Theoretical advantages over existing methods (tighter bounds, better rates, etc.)
+- Where applicable: generalization bounds, convergence rates, computational
+  complexity, information-theoretic arguments
+- Explicitly state all assumptions
+Source: ./ideation/theory.md
+Target: 1-3 theorems/propositions with proofs or proof sketches.]
 
-## Experimental Plan
-- Datasets: ...
-- Baselines: ...
-- Primary metric: ...
-- Expected outcome: ...
+## 5. Proposed Method
+[Detailed technical description of the method.
+- High-level overview (algorithm flow or architecture diagram in ASCII/text)
+- Key components and their roles
+- Training / inference procedure
+- Pseudocode for the core algorithm (if applicable)
+- How each component addresses a specific challenge from Section 2
+Target: 3-5 paragraphs + pseudocode or algorithm block.]
 
-## Related Work & Positioning
-[How this differs from the 5 most relevant papers]
+## 6. Experimental Design
+[Comprehensive experiment plan.
 
-## Novelty Claim
-[One paragraph explicitly stating what is new]
+### 6.1 Datasets
+| Dataset | Domain | Size | Split | Source |
+|---------|--------|------|-------|--------|
 
-## Risks & Mitigations
-[Top 2-3 risks and how to handle them]
+### 6.2 Baselines
+| Method | Venue/Year | Why included |
+|--------|-----------|--------------|
 
-## Timeline
+### 6.3 Evaluation Metrics
+- Primary: ...
+- Secondary: ...
+
+### 6.4 Experiments
+| Experiment | Purpose | Expected Finding |
+|-----------|---------|-----------------|
+| Main comparison | Compare against SOTA | ... |
+| Ablation study | Validate each component | ... |
+| Sensitivity analysis | Robustness to hyperparameters | ... |
+| Case study / Visualization | Qualitative understanding | ... |
+
+### 6.5 Expected Results
+[Quantitative predictions for main experiments. What margins of improvement
+are expected and why?]]
+
+## 7. Conclusion
+[Highlight the key contributions and expected impact.
+- Technical highlights (what is novel about the method)
+- Expected experimental highlights (what results will be eye-catching)
+- Broader impact and potential applications
+- Limitations and future work
+Target: 2-3 paragraphs, written to be compelling and memorable.]
+
+## 8. Revision History
+[Chronological record of major changes from project inception to final proposal.
+Source: ./ideation/log.md
+
+| Date | Iteration | Change Type | What Changed | Why | Outcome |
+|------|-----------|-------------|-------------|-----|---------|
+| YYYY-MM-DD | N | Direction pivot / Scope change / Method revision / ... | [description] | [reason] | [result] |
+]
+
+---
+
+## Appendix
+
+### A. Conference Readiness Score
+Novelty: X/5 | Significance: X/5 | Soundness: X/5 | Feasibility: X/5
+Total: XX/20
+
+### B. Timeline
 - Month 1-2: ...
 - Month 3-4: ...
 - Month 5-6: ...
 
-## Conference Readiness Score
-Novelty: X/5 | Significance: X/5 | Soundness: X/5 | Feasibility: X/5
-Total: XX/20
+### C. Risks & Mitigations
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
 ```
 
 ---
@@ -457,10 +571,36 @@ All session data lives under `./ideation/`:
 ├── log.md        ← append-only history of every attempt and score
 ├── papers.md     ← append-only index of all papers ever retrieved
 ├── literature.md ← structured analysis notes from Phase 3 deep dive
-└── proposal.md   ← final output (written only after Gate passes)
+└── theory.md     ← problem formalization and theoretical analysis from Phase 4
+
+./Proposal.md      ← final proposal (English, Markdown) — written only after Gate passes
+./Proposal.html    ← final proposal (English, styled HTML with KaTeX)
+./Proposal_cn.html ← final proposal (Chinese, styled HTML with KaTeX)
 ```
 
 **At session start:** read `./ideation/state.md` to resume from the correct phase and iteration. Also read `./ideation/papers.md` to know which papers have already been retrieved — do not re-search or re-summarize papers already recorded there.
+
+---
+
+### papers.md — Append-Only Paper Index
+
+Append new papers as they are found in each phase. Never overwrite existing entries. The TLDR column should be a one-sentence summary of what the paper studies/proposes.
+
+```markdown
+# Papers Index
+
+## Phase 1: Literature Probe
+
+| Paper | Venue/Year | TLDR | Core Claim | Method | Key Limitation |
+|-------|-----------|------|------------|--------|---------------|
+| ... | ... | ... | ... | ... | ... |
+
+## Phase 3: Deep Dive
+
+| Paper | Venue/Year | TLDR | Core Claim | Method | Key Limitation |
+|-------|-----------|------|------------|--------|---------------|
+| ... | ... | ... | ... | ... | ... |
+```
 
 ---
 
@@ -484,7 +624,7 @@ Overwrite this file after every phase transition. It always reflects the latest 
 
 ### log.md — Append-Only History
 
-Append one entry per completed phase or gate check. Never overwrite. This is the full audit trail.
+Append one entry per completed phase or gate check. Never overwrite. This is the full audit trail and the source for the Revision History section (Section 8) of the final proposal.
 
 ```markdown
 # Ideation Log
@@ -500,6 +640,13 @@ Append one entry per completed phase or gate check. Never overwrite. This is the
 ### Problems Identified
 - [problem 1]: [why it's a problem]
 - [problem 2]: ...
+
+### Key Decisions & Changes
+[Record every significant change — direction pivots, scope adjustments, method revisions, problem reframing. This feeds Section 8 (Revision History) of the final proposal.]
+
+| Change Type | What Changed | Why | Outcome |
+|-------------|-------------|-----|---------|
+| [Direction pivot / Scope change / Method revision / Problem reframing / ...] | [description] | [reason] | [result] |
 
 ### Gate Score (if this was a Gate check)
 | Dimension | Score | Reason |
@@ -531,7 +678,7 @@ Append one entry per completed phase or gate check. Never overwrite. This is the
 8. **Explicit user checkpoints** — wait for confirmation at Phase 0, 2, and Gate
 9. **YAGNI for scope** — cut any claim or experiment that is not needed to demonstrate the core insight
 10. **Resume from state** — always check `./ideation/state.md` before starting; append to `./ideation/log.md` after every phase
-11. **Language matching** — detect the language of the user's message and use that language throughout the entire response, including all generated documents (state.md, log.md, literature.md, proposal.md)
+11. **Language matching** — detect the language of the user's message and use that language throughout the entire response, including all generated documents (state.md, log.md, literature.md, theory.md, Proposal.md, Proposal.html, Proposal_cn.html)
 
 ---
 
