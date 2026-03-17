@@ -21,21 +21,28 @@ Every loop iteration ends with a readiness score. If the idea is not ready, iden
 Raw Idea
   │
   ▼
-[Phase 0] Capture          — Understand the spark via 5W1H (one question at a time)
+[Phase 0] Capture            — Understand the spark via 5W1H (one question at a time)
   │
   ▼
-[Phase 1] Literature Probe — Quick scan: 10-15 papers, map the landscape
+[Phase 1] Literature Probe   — Quick scan: 10-15 papers, map the landscape
   │
   ▼
-[Phase 2] Synthesis Report — Identify gaps, present landscape, propose 2-3 directions
+[Phase 2] Synthesis Report   — Identify gaps, present landscape, propose 2-3 directions
   │
-  USER CHOOSES DIRECTION
+  USER CHOOSES DIRECTION ─── or ─── "All sound good" / no preference
+  │                                        │
+  │                                        ▼
+  │                              [Phase 2.5] Feasibility Scout
+  │                              Quick-check each direction (2-3 searches each)
+  │                              Auto-select best feasibility profile
+  │                                        │
+  ◄────────────────────────────────────────┘
   │
   ▼
-[Phase 3] Deep Dive        — 20-30 focused papers, detailed gap analysis
+[Phase 3] Deep Dive           — 20-30 focused papers, detailed gap analysis
   │
   ▼
-[Phase 4] Sharpen          — SMART research question, experimental sketch
+[Phase 4] Sharpen             — SMART research question, experimental sketch
   │
   ▼
 [Gate]  Conference Readiness Check (Novelty / Significance / Soundness / Feasibility)
@@ -53,9 +60,11 @@ Persist loop state to `./ideation/state.md` so the session can be resumed.
 
 | Phase | Tool | Purpose |
 |-------|------|---------|
-| Phase 0 | `WebSearch` | Quick field survey — dominant paradigms, key labs, open problems |
+| Phase 0 | `WebSearch` | Field survey — dominant paradigms, key labs, breakthroughs, open problems |
+| Phase 0 | (text output) | Background Briefing — educate user on field landscape before Q&A |
 | Phase 1 | `WebSearch` | Search arXiv, Semantic Scholar, Google Scholar for 10-15 papers |
-| Phase 2 | `AskUserQuestion` | Present 2-3 directions with trade-offs for user choice |
+| Phase 2 | `AskUserQuestion` | Present 2-3 directions with trade-offs for user choice (includes "All sound good" option) |
+| Phase 2.5 | `WebSearch` | Feasibility Scout — quick-check each direction (2-3 searches each) when user has no preference |
 | Phase 3 | `WebSearch` | Deep search for 20-30 focused papers on the chosen direction |
 | Phase 4 | `AskUserQuestion` | Confirm research question and experimental sketch |
 | Gate | `AskUserQuestion` | Present score card, ask whether to iterate or proceed |
@@ -103,20 +112,60 @@ At every decision point, strip away assumptions and reason from fundamentals:
 
 ## Phase 0: Capture the Spark
 
-**Goal:** Understand the raw idea well enough to search meaningfully. Do a quick field survey first so questions are grounded in reality, not assumption.
+**Goal:** Understand the raw idea well enough to search meaningfully. Do a field survey first, then present a comprehensive background briefing to the user before asking any questions.
 
-**Step 0 — Quick field survey (before asking anything):**
-Before posing the first question, run 2-3 fast WebSearch queries to get a basic grasp of the field:
+### Step 0 — Field Survey (silent research, before any user interaction)
+
+Before posing the first question, run 3-5 fast WebSearch queries to build a solid grasp of the field:
 - What are the dominant paradigms and open problems in this area?
 - Who are the key labs and recurring authors?
 - What are the most-cited benchmarks or datasets?
+- What recent breakthroughs or trend shifts have occurred (last 1-2 years)?
+- What are the main unsolved challenges the community is actively working on?
 
 Example search queries for a topic like "EEG-based emotion recognition":
 - `"EEG emotion recognition" survey OR review 2024 2025`
 - `"affective computing" EEG deep learning NeurIPS OR ICML OR ICLR`
 - `"EEG decoding" benchmark dataset state-of-the-art`
 
-Use this background to inform every question you ask. Never assume the user is an expert in the field — your job is to help them navigate it.
+### Step 1 — Background Briefing (MUST present to user before asking any questions)
+
+**This step is mandatory.** After completing the field survey, write and present a structured background briefing to the user. The briefing educates the user on the current state of the field so they can make informed decisions during the Q&A that follows. The briefing should be written in the user's language and cover:
+
+```markdown
+## 🔍 Field Background Briefing: [Topic Area]
+
+### Current Landscape
+[2-3 paragraphs summarizing: What is this field about? What are the dominant approaches?
+What has been achieved so far? Include specific method names, key papers, and performance
+numbers where available.]
+
+### Key Players & Venues
+[Which research groups/labs are leading this area? Which conferences/journals publish
+the most relevant work? List 3-5 key groups with their focus areas.]
+
+### Recent Breakthroughs (Last 1-2 Years)
+[What has changed recently? Any paradigm shifts, new datasets, new capabilities?
+Highlight 2-3 specific papers or developments that reshaped the field.]
+
+### Open Challenges & Active Debates
+[What problems remain unsolved? Where does the community disagree?
+List 3-5 concrete open questions, each with a brief explanation of why it matters.]
+
+### Where Your Idea Fits (Initial Impression)
+[Based on what you've shared so far, here's where your idea sits relative to the
+landscape above. This is a preliminary assessment — we'll refine it together.]
+```
+
+**Briefing quality requirements:**
+- Must be **substantive and educational**, not a vague overview — include specific paper names, method names, numbers, and dates
+- Must help the user understand the field well enough to answer the follow-up questions intelligently
+- Must explicitly connect the user's raw idea to the landscape (the "Where Your Idea Fits" section)
+- Length: 400-800 words (enough to be informative, not so long it's overwhelming)
+
+After presenting the briefing, pause briefly to let the user absorb it, then proceed to the Q&A.
+
+### Step 2 — Interactive Q&A (one question at a time)
 
 **Interaction rules:**
 - Ask questions **one at a time**. Never ask multiple questions in one message.
@@ -125,6 +174,7 @@ Use this background to inform every question you ask. Never assume the user is a
 - Use `preview` for options that benefit from visual comparison (e.g., method sketches, architecture diagrams in ASCII).
 - Use `multiSelect: true` only when choices are genuinely non-exclusive (e.g., "which aspects matter to you?").
 - Fall back to open-ended text only for questions that have no enumerable options.
+- **Context from briefing**: Reference specific findings from the Background Briefing when asking questions — e.g., "In the briefing, we saw that Method X struggles with Y. Given this, which approach appeals to you?"
 - **Stop condition**: Stop asking once you can answer all 6 dimensions with reasonable confidence. Specifically, you should be able to write a coherent 1-paragraph summary that covers What (specific problem), Why (motivation), Who (audience), and How (initial approach). When/Where may remain partially open — that is acceptable.
 
 **5W1H checklist** (continuously revisited throughout all phases — see below):
@@ -199,6 +249,7 @@ Direction A: [Title]
   Main risk: ...
   Estimated novelty: High / Medium
   Estimated difficulty: Hard / Medium / Easy
+  Feasibility signals: [known public datasets? reproducible baselines? compute estimate?]
 
 Direction B: [Title]
   ...
@@ -209,13 +260,68 @@ Direction C: [Title]
 My recommendation: Direction [X], because ...
 ```
 
-**User checkpoint:** Present directions, wait for the user to choose or ask follow-up questions. Do NOT proceed to Phase 3 until direction is confirmed.
+**User checkpoint:** Present directions via `AskUserQuestion` with the following options:
+- One option per proposed direction (A, B, C), each with a description summarizing its trade-offs
+- **Always include a final option: "All sound good — you recommend"** with description: "I don't have a strong preference. Run a quick feasibility check on all directions and pick the most viable one."
+
+When the user selects "All sound good" (or responds with equivalent phrases like "都可以", "any is fine", "you decide"), **trigger Phase 2.5: Feasibility Scout** before proceeding to Phase 3.
+
+When the user selects a specific direction, skip Phase 2.5 and go directly to Phase 3.
+
+Do NOT proceed to Phase 3 until direction is confirmed (either by user choice or by scout recommendation).
 
 **Output quality checklist:**
 - [ ] Exactly 2-3 directions proposed (not 1, not 4+)
 - [ ] Each direction has explicit trade-offs (risk vs. reward, novelty vs. feasibility)
+- [ ] Each direction includes feasibility signals (datasets, baselines, compute)
 - [ ] A clear recommendation is given with reasoning
 - [ ] Gap analysis references specific papers from Phase 1 landscape table
+- [ ] "All sound good" option is always included in AskUserQuestion
+
+---
+
+## Phase 2.5: Feasibility Scout (conditional — only when user has no preference)
+
+**Trigger:** The user selected "All sound good — you recommend" in Phase 2, or responded with equivalent phrases ("都可以", "any is fine", "you decide", "no preference").
+
+**Goal:** Quickly validate the feasibility of all 2-3 proposed directions before committing to the expensive Phase 3 deep-dive. Catch dead-end paths early with minimal search cost.
+
+**For each proposed direction, run 2-3 targeted WebSearches to check:**
+1. **Dataset availability** — Are there public, commonly-used datasets for this direction? Are they accessible?
+2. **Baseline reproducibility** — Do the key baseline papers have open-source code? Can results be reproduced?
+3. **Concurrent work risk** — Are there very recent papers (< 3 months) that closely overlap this direction?
+4. **Compute/resource fit** — Does this direction require resources (data scale, GPU hours, proprietary tools) that may be out of reach?
+
+**Produce a Feasibility Comparison Table:**
+
+```markdown
+## Feasibility Scout Results
+
+| Dimension | Direction A | Direction B | Direction C |
+|-----------|------------|------------|------------|
+| Public datasets | ✅ 3 datasets (X, Y, Z) | ⚠️ 1 dataset, proprietary | ✅ 2 datasets (X, Y) |
+| Baselines with code | ✅ 4/5 have code | ❌ 1/5 have code | ✅ 3/5 have code |
+| Concurrent work risk | ⚠️ 1 recent overlap | ✅ Low | ✅ Low |
+| Compute feasibility | ✅ Single GPU OK | ❌ Needs 8×A100 | ✅ Single GPU OK |
+| **Quick Score** | **★★★★☆** | **★★☆☆☆** | **★★★★☆** |
+
+**Recommendation:** Direction [X], because it has the best feasibility profile: [specific reasoning].
+**Runner-up:** Direction [Y] is also viable but carries risk in [dimension].
+**Eliminated:** Direction [Z] has a critical blocker: [specific issue].
+```
+
+**After presenting the table:**
+- Explain the recommendation clearly, connecting feasibility findings to the user's context
+- Let the user confirm or override the recommendation before proceeding to Phase 3
+- If the user disagrees, they can pick any direction — the scout is advisory, not binding
+
+**Output quality checklist:**
+- [ ] All proposed directions are scouted (not just the recommended one)
+- [ ] Each feasibility dimension has specific evidence (paper names, dataset names, code links), not just ✅/❌
+- [ ] A clear recommendation is given with reasoning tied to the feasibility findings
+- [ ] The user is asked to confirm before proceeding
+
+**Cost budget:** ~6-9 WebSearches total (2-3 per direction). This is much cheaper than a full Phase 3 deep-dive (20-30 papers) on the wrong path.
 
 ---
 
@@ -366,7 +472,7 @@ Overwrite this file after every phase transition. It always reflects the latest 
 # Ideation State
 
 **Idea:** [one-line summary]
-**Phase:** [0 / 1 / 2 / 3 / 4 / Gate / Done]
+**Phase:** [0 / 1 / 2 / 2.5 / 3 / 4 / Gate / Done]
 **Iteration:** [N]
 **Direction:** [chosen direction title, or "TBD"]
 **Last Score:** N: X/5 | S: X/5 | T: X/5 | F: X/5 | Total: XX/20  (or "-" if not yet scored)
