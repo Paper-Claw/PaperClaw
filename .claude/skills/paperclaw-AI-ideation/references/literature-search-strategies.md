@@ -41,19 +41,13 @@ Add domain-specific terms:
 
 ## 2. Academic Database Selection
 
-| Database | Strengths | Best Used For |
-|----------|-----------|---------------|
-| **arXiv** | Preprints, fast updates | Getting the latest research |
-| **Semantic Scholar** | AI-powered, citation analysis | Finding related papers, analyzing impact |
-| **Google Scholar** | Broad coverage | Comprehensive search, finding missed papers |
-| **ACL Anthology** | NLP-focused | Deep NLP domain search |
-| **IEEE Xplore** | Engineering & technology | Computer vision, hardware-related |
+See `references/domain.md` "Primary Databases" for the full database list with strengths and use cases.
 
 ### Search Strategies
 
-**arXiv search**:
+**arXiv search** (use arXiv categories from `references/domain.md`):
 ```
-cat:cs.LG AND (transformer OR attention) AND (interpretability OR explainability)
+cat:[CATEGORY] AND ([keyword1] OR [keyword2]) AND ([keyword3] OR [keyword4])
 ```
 
 **Google Scholar search**:
@@ -92,7 +86,7 @@ cat:cs.LG AND (transformer OR attention) AND (interpretability OR explainability
 
 **Inclusion criteria**:
 - Directly relevant to the research topic
-- Published at top venues (NeurIPS, ICML, ICLR, ACL, AAAI, KDD)
+- Published at top venues (see `references/domain.md` "Top Venue Filter")
 - High citation count (relative to publication date)
 
 **Exclusion criteria**:

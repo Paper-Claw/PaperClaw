@@ -96,7 +96,7 @@ When the Gate score reveals a weak dimension, run one of these targeted tasks in
 
 **Targeted actions:**
 1. List all datasets needed and verify they are publicly available
-2. Estimate compute requirements (model size, training steps, GPU hours)
+2. Estimate compute requirements using domain-standard resource metrics (see `references/domain.md` "Resource Estimates")
 3. Identify which baselines are reproducible (code available?)
 4. Find a reduced-scale version of the experiment that proves the concept
 
@@ -104,7 +104,7 @@ When the Gate score reveals a weak dimension, run one of these targeted tasks in
 - Use a smaller public dataset as proof-of-concept before scaling
 - Replace expensive baselines with lighter-weight approximations
 - Scope down to 1-2 primary datasets rather than comprehensive benchmarks
-- Use a pretrained backbone instead of training from scratch
+- Leverage domain-standard pretrained models (see `references/domain.md`) to reduce cost
 - Design ablations that are cheap but informative
 
 ---
@@ -172,7 +172,7 @@ See SKILL.md "Persistent State & Log" section for the exact file formats.
 
 ### Stale Literature (> 2 years without new work)
 
-**Symptoms:** The most recent paper on this topic is more than 2 years old; no arXiv preprints in the last 12 months.
+**Symptoms:** The most recent paper on this topic is more than 2 years old; no preprints on domain databases (see `references/domain.md`) in the last 12 months.
 
 **Protocol:**
 1. Determine cause — is this a **mature field** (problem considered solved) or an **abandoned direction** (problem too hard / not interesting)?

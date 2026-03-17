@@ -2,7 +2,7 @@
 
 Evaluation rubric for assessing whether a research idea is ready for top-venue submission.
 
-**Target venues:** NeurIPS, ICML, ICLR, ACL, KDD, AAAI
+**Target venues:** See `references/domain.md` for the full venue list.
 
 ---
 
@@ -112,12 +112,12 @@ Can these experiments actually be run?
 **Feasibility checklist:**
 - [ ] Primary dataset: name it, confirm it is publicly available
 - [ ] Baselines: code available for top 2-3 baselines
-- [ ] Compute estimate: < 200 GPU-hours for proof-of-concept experiment
+- [ ] Compute estimate: within domain-standard compute budget (see `references/domain.md` "Resource Estimates")
 - [ ] Data size: training set large enough to show effect but not requiring TPU-scale
 - [ ] Timeline: core results achievable in 3 months
 
 **Reducing feasibility risk:**
-- Use a pretrained backbone (e.g., BERT, ResNet, GPT-2) to reduce training cost
+- Use pretrained models standard in the domain (see `references/domain.md`) to reduce training cost
 - Start with a small-scale proof of concept (1 dataset, 1 baseline, 1 metric)
 - Choose evaluation tasks with standardized train/dev/test splits
 - Use publicly available implementation of the hardest component
@@ -126,41 +126,7 @@ Can these experiments actually be run?
 
 ## Venue-Specific Notes
 
-### NeurIPS / ICML / ICLR (Machine Learning)
-
-**What reviewers prioritize:**
-- Theoretical insights or rigorous empirical analysis
-- Clear positioning against recent SOTA (last 12 months)
-- Code and reproducibility (increasingly expected)
-- Ablations that justify design choices
-
-**Common rejection reasons:**
-- "Lacks novelty over [specific concurrent paper]"
-- "Experiments are not comprehensive enough to support claims"
-- "Motivation is not convincing — why does this matter?"
-- "Related work is missing [key paper]"
-
-**What tends to get in:**
-- New problem formulation with a clear motivation
-- New dataset or benchmark + first methods
-- Negative results with insight (why a commonly assumed approach fails)
-- Principled method + theory + experiments
-
-### ACL / EMNLP / NAACL (NLP)
-
-**What reviewers prioritize:**
-- Linguistic or cognitive motivation (not just benchmark improvement)
-- Cross-lingual or multilingual coverage when making general claims
-- Human evaluation for generation tasks
-- Efficiency analysis for production-relevant claims
-
-### KDD (Data Mining / Applied ML)
-
-**What reviewers prioritize:**
-- Real-world application with scale
-- Practical deployment considerations
-- Industrial data and collaboration are a plus
-- Reproducibility and open data
+**Venue-specific reviewer priorities, common rejection reasons, and what tends to get accepted:** See `references/domain.md` "Venue-Specific Reviewer Priorities" section.
 
 ---
 
@@ -213,65 +179,4 @@ Total ≥ 16 AND all dims ≥ 3?
 
 ## Journal-Specific Notes
 
-### Nature / Science / Cell
-
-**What editors and reviewers prioritize:**
-- Broad impact beyond a single subfield — the work must be of interest to a wide scientific audience
-- Strong narrative arc: clear problem → elegant insight → convincing evidence → broader implications
-- Experimental rigor at the highest level: multiple validation approaches, controls, statistical tests
-- Novelty must be conceptual, not just methodological — a new understanding, not just a new technique
-
-**Key differences from CS conferences:**
-- Review cycle: 3-6+ months (vs. 2-3 months for conferences)
-- Desk rejection rate is high — the "significance" bar is much higher
-- Supplementary materials can be extensive (no page limit for appendix)
-- Negative results are rarely published unless they overturn a major assumption
-- Single-blind review (Nature) vs. double-blind (most CS conferences)
-
-**Readiness threshold adjustment:** Significance must score ≥ 4 (not just ≥ 3) for these venues.
-
-### PNAS (Proceedings of the National Academy of Sciences)
-
-**What reviewers prioritize:**
-- Scientific rigor and methodological soundness
-- Cross-disciplinary relevance (especially valued for computational work with domain applications)
-- Direct contribution track requires NAS member sponsorship
-- Contributed articles have a shorter review cycle than direct submissions
-
-**Key differences:**
-- Three review tracks: Direct Submission, Contributed, and Invited
-- Page limit: ~6 pages for main text + unlimited SI
-- Broader audience than CS-specific venues — write for scientists, not just ML researchers
-
-### CVPR / ECCV / ICCV (Computer Vision)
-
-**What reviewers prioritize:**
-- Visual results — qualitative examples matter as much as quantitative metrics
-- Strong baselines on standard benchmarks (ImageNet, COCO, ADE20K, etc.)
-- Real-time or efficient inference is a plus for applied work
-- Ablation studies that clearly isolate each design choice
-
-**Common rejection reasons:**
-- "Results are only shown on one dataset"
-- "Missing comparison with [recent concurrent work]"
-- "Qualitative results do not show meaningful improvement"
-
-### Venue Selection Decision Guide
-
-```
-Is the contribution primarily a new scientific understanding?
-  YES → Nature / Science / PNAS
-  NO  →
-    Is it a new ML method with theoretical grounding?
-      YES → NeurIPS / ICML / ICLR
-      NO  →
-        Is it focused on language / text?
-          YES → ACL / EMNLP / NAACL
-          NO  →
-            Is it focused on vision / images / video?
-              YES → CVPR / ECCV / ICCV
-              NO  →
-                Is it applied ML with real-world data?
-                  YES → KDD / WWW / AAAI
-                  NO  → Reassess scope and contribution type
-```
+**Journal-specific reviewer priorities, readiness threshold adjustments, and venue selection decision guide:** See `references/domain.md` "Journal-Specific Notes" and "Venue Selection Decision Guide" sections.

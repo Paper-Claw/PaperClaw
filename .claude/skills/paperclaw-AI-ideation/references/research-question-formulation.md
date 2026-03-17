@@ -11,25 +11,24 @@ A good research question should satisfy the SMART criteria:
 **Bad question**:
 - "How to improve model performance?" (too broad)
 
-**Good question**:
-- "How can we improve Transformer performance on long-text understanding tasks by refining the attention mechanism?"
+**Good question** (see `references/domain.md` "Example SMART Research Questions" for domain-appropriate examples):
+- Clearly names the research subject, improvement direction, task scenario, and objective
 
 **Key elements**:
-- Clear research subject (Transformer)
-- Specific direction for improvement (attention mechanism)
-- Defined task scenario (long-text understanding)
-- Clear objective (improve performance)
+- Clear research subject
+- Specific direction for improvement
+- Defined task scenario
+- Clear objective
 
 ### 1.2 Measurable
 
 The research question should have clear evaluation criteria:
 
 **Examples**:
-- "Improve performance" → "Improve F1 score on SQuAD"
-- "Improve interpretability" → "Improve faithfulness score in human evaluation"
+See `references/domain.md` "Example Measurability" and "Example Evaluation Metrics" for domain-appropriate examples.
 
 **Evaluation dimensions**:
-- Quantitative metrics: accuracy, F1, BLEU, perplexity
+- Quantitative metrics (domain-specific — see `references/domain.md`)
 - Qualitative metrics: human evaluation, case analysis
 - Efficiency metrics: training time, inference speed, memory usage
 
@@ -38,7 +37,7 @@ The research question should have clear evaluation criteria:
 Consider resource and capability constraints:
 
 **Resource assessment**:
-- Compute resources: GPU quantity and type
+- Compute resources: domain-standard compute resources (see `references/domain.md` "Resource Estimates")
 - Data resources: Dataset availability and quality
 - Time resources: Research timeline (3 months, 6 months, 1 year)
 
@@ -86,7 +85,7 @@ Set a reasonable research timeline:
 **Characteristics**: Explore unknown territory, discover new phenomena
 
 **Example**:
-- "What patterns does the Transformer attention mechanism exhibit when processing long texts?"
+- See `references/domain.md` "Example Exploratory Question" for a domain-appropriate example
 
 **Best suited for**:
 - Emerging research areas

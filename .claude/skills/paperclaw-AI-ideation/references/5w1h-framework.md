@@ -16,10 +16,8 @@ The 5W1H framework is a systematic thinking tool that helps researchers construc
 - What are the scope and boundaries of the research?
 - What are the expected research outcomes?
 
-**Examples**:
-- "Study the interpretability of Transformer models"
-- "Explore few-shot learning applications in medical image analysis"
-- "Analyze sample efficiency problems in reinforcement learning"
+**Examples** (see `references/domain.md` "Example 5W1H" for domain-appropriate examples):
+- Clearly names the research subject, problem, scope, and expected outcomes
 
 ### Why
 
@@ -102,23 +100,7 @@ The 5W1H framework is a systematic thinking tool that helps researchers construc
 
 ## Usage Examples
 
-### Example 1: Transformer Interpretability Research
-
-**What**: Study the interpretability of Transformer attention mechanisms
-**Why**: Improve model transparency, enhance user trust, meet regulatory requirements
-**Who**: NLP researchers, model developers, regulatory bodies
-**When**: 6-12 months; Transformers are widely deployed but lack interpretability
-**Where**: Text classification, machine translation, QA systems, and other NLP tasks
-**How**: Design visualization tools, analyze attention weights, conduct ablation experiments
-
-### Example 2: Few-Shot Learning in Medical Imaging
-
-**What**: Explore the effectiveness of few-shot learning methods in medical image diagnosis
-**Why**: Medical data annotation is expensive; few-shot learning can reduce data requirements
-**Who**: Medical AI researchers, radiologists, hospitals
-**When**: 12-18 months, as few-shot learning techniques mature
-**Where**: X-ray, CT scan, MRI, and other medical imaging diagnosis
-**How**: Meta-learning, transfer learning, data augmentation; validate on real medical datasets
+See `references/domain.md` "Example 5W1H" for complete domain-appropriate examples covering all six dimensions (What, Why, Who, When, Where, How).
 
 ## Best Practices
 

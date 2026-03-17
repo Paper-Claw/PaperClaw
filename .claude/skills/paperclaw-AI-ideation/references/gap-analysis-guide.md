@@ -16,10 +16,8 @@ Gap analysis is the systematic process of identifying areas, methods, or applica
 - Identify important but infrequently cited research directions
 - Discover emerging technologies or application scenarios
 
-**Examples**:
-- "Application of Transformers to time-series forecasting is under-studied"
-- "Few-shot learning in medical imaging is still in its early stages"
-- "Multimodal learning for robot control has not been fully explored"
+**Examples** (see `references/domain.md` "Example Gap Analysis" for domain-appropriate examples):
+- Under-studied sub-areas identified through systematic literature review
 
 ### 2. Methodological Gap
 
@@ -31,10 +29,8 @@ Gap analysis is the systematic process of identifying areas, methods, or applica
 - Discover computational efficiency or scalability issues
 - Identify gaps between theory and practice
 
-**Examples**:
-- "Existing attention mechanisms are inefficient on long sequences"
-- "Current reinforcement learning methods suffer from poor sample efficiency"
-- "Existing interpretability methods are difficult to apply to large-scale models"
+**Examples** (see `references/domain.md` "Example Gap Analysis" for domain-appropriate examples):
+- Limitations and failure cases of existing methods in specific scenarios
 
 ### 3. Application Gap
 
@@ -46,9 +42,8 @@ Gap analysis is the systematic process of identifying areas, methods, or applica
 - Identify disconnect between industry needs and academic research
 - Discover technology transfer possibilities
 
-**Examples**:
-- "Self-supervised learning for industrial quality inspection is under-explored"
-- "Graph neural networks for financial risk management have few studies"
+**Examples** (see `references/domain.md` "Example Gap Analysis" for domain-appropriate examples):
+- Theoretical methods lacking practical validation in new domains
 
 ### 4. Interdisciplinary Gap
 
@@ -59,10 +54,8 @@ Gap analysis is the systematic process of identifying areas, methods, or applica
 - Discover potential for method transfer across domains
 - Identify complex problems requiring multidisciplinary collaboration
 
-**Examples**:
-- "Cross-fertilization between cognitive science and deep learning"
-- "Combining quantum computing with machine learning"
-- "Biologically-inspired neural network architecture design"
+**Examples** (see `references/domain.md` "Example Gap Analysis" for domain-appropriate examples):
+- Cross-domain method transfer and multidisciplinary intersections
 
 ### 5. Temporal Gap
 
@@ -73,9 +66,8 @@ Gap analysis is the systematic process of identifying areas, methods, or applica
 - Discover the impact of data distribution shifts over time
 - Identify new challenges from changing societal needs
 
-**Examples**:
-- "Prompt engineering research in the era of large language models"
-- "Impact of privacy regulations on machine learning"
+**Examples** (see `references/domain.md` "Example Gap Analysis" for domain-appropriate examples):
+- New problems introduced by emerging technologies or changing requirements
 
 ## Analysis Dimensions
 
@@ -151,7 +143,7 @@ For each identified gap, evaluate:
 
 Before committing to a research direction, verify again:
 - Are there any very recent related works? (search papers from the last 3 months)
-- Is anyone currently working on it? (check arXiv preprints)
+- Is anyone currently working on it? (check preprints on domain databases — see `references/domain.md`)
 - Are there technological or data limitations?
 
 ### 2. Multi-Dimensional Combinations

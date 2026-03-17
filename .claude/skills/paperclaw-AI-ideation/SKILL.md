@@ -1,12 +1,12 @@
 ---
 name: paperclaw-AI-ideation
-description: Use when the user wants to "brainstorm a research idea", "polish a paper idea", "find a research direction", "identify research gaps", "start a new project", "check if my idea can get into NeurIPS/ICML/ICLR", or shares any raw research concept that needs refinement. Runs an auto-pilot loop of literature search → synthesis → auto-decision → refinement until the idea reaches top-conference publication quality. Produces a complete Proposal with all auto-decisions logged for user review. Supports re-running with user overrides.
+description: Use when the user wants to "brainstorm a research idea", "polish a paper idea", "find a research direction", "identify research gaps", "start a new project", "check if my idea can get into a top conference", or shares any raw research concept that needs refinement. Runs an auto-pilot loop of literature search → synthesis → auto-decision → refinement until the idea reaches top-conference publication quality (target venues defined in references/domain.md). Produces a complete Proposal with all auto-decisions logged for user review. Supports re-running with user overrides.
 version: 1.0.0
 ---
 
 # Research Ideation — Iterative Idea Polishing Loop
 
-An **auto-pilot**, literature-driven loop that takes a raw research spark and refines it through repeated cycles of search, synthesis, and autonomous decision-making until it reaches top-conference (NeurIPS / ICML / ICLR / ACL / KDD) publication quality. The entire pipeline runs without user interaction — the user reviews the finished Proposal and can override any auto-decision by re-running.
+An **auto-pilot**, literature-driven loop that takes a raw research spark and refines it through repeated cycles of search, synthesis, and autonomous decision-making until it reaches top-conference publication quality (target venues defined in `references/domain.md`). The entire pipeline runs without user interaction — the user reviews the finished Proposal and can override any auto-decision by re-running.
 
 ## Core Principle
 
@@ -102,7 +102,7 @@ After reviewing the Proposal and `./ideation/questions.md`, the user can re-invo
 | Phase 0 | `WebSearch` | Field survey — dominant paradigms, key labs, breakthroughs, open problems |
 | Phase 0 | (text output) | Background Briefing — educate user on field landscape |
 | Phase 0 | `Write` | Auto-infer 5W1H, log decisions to `./ideation/questions.md` |
-| Phase 1 | `WebSearch` | Search arXiv, Semantic Scholar, Google Scholar for 10-15 papers |
+| Phase 1 | `WebSearch` | Search databases listed in `references/domain.md` for 10-15 papers |
 | Phase 2 | `Write` | Log 2-3 proposed directions and trade-offs to `./ideation/questions.md` |
 | Phase 2.5 | `WebSearch` | Feasibility Scout — quick-check all directions (always triggered) |
 | Phase 2.5 | `Write` | Log feasibility comparison and auto-selected direction to `./ideation/questions.md` |
@@ -168,10 +168,7 @@ Before posing the first question, run 3-5 fast WebSearch queries to build a soli
 - What recent breakthroughs or trend shifts have occurred (last 1-2 years)?
 - What are the main unsolved challenges the community is actively working on?
 
-Example search queries for a topic like "EEG-based emotion recognition":
-- `"EEG emotion recognition" survey OR review 2024 2025`
-- `"affective computing" EEG deep learning NeurIPS OR ICML OR ICLR`
-- `"EEG decoding" benchmark dataset state-of-the-art`
+Example search queries — see `references/domain.md` "Example Search Queries" section for domain-appropriate templates.
 
 ### Step 1 — Background Briefing (MUST present to user before auto-inference)
 
@@ -226,7 +223,7 @@ After presenting the briefing, proceed immediately to auto-inference (no pause n
 |-----------|--------------|---------------------|
 | **What** | What problem or phenomenon to study? | User's raw idea + field survey open problems |
 | **Why** | Why does this problem matter? | Field survey: community interest, active debates, practical impact |
-| **Who** | Target community and application users? | Infer from topic → most relevant top venue (NeurIPS/ICML/ICLR/ACL/KDD) |
+| **Who** | Target community and application users? | Infer from topic → most relevant top venue (see `references/domain.md`) |
 | **When** | Timing context? | Field survey: recent breakthroughs, new capabilities, trending topics |
 | **Where** | Domain or application scenario? | User's raw idea + field survey: standard benchmarks and datasets |
 | **How** | Method or technical approach? | Field survey: dominant paradigms + identified gaps → most promising approach |
@@ -247,9 +244,9 @@ After presenting the briefing, proceed immediately to auto-inference (no pause n
 **Goal:** Map the existing landscape quickly. Do not go deep yet — coverage matters more than depth.
 
 **Search targets:**
-- arXiv (cs.LG, cs.CV, cs.CL, stat.ML — choose based on domain)
+- Databases and arXiv categories listed in `references/domain.md` (choose based on topic)
 - Semantic Scholar for citation counts and influential papers
-- Top-venue proceedings: NeurIPS, ICML, ICLR, ACL, KDD, AAAI (last 3 years)
+- Top-venue proceedings listed in `references/domain.md` (last 3 years)
 
 **Search strategy:**
 1. Extract 2-4 core concept pairs from Phase 0 summary
@@ -327,7 +324,7 @@ My recommendation: Direction [X], because ...
 1. **Dataset availability** — Are there public, commonly-used datasets for this direction? Are they accessible?
 2. **Baseline reproducibility** — Do the key baseline papers have open-source code? Can results be reproduced?
 3. **Concurrent work risk** — Are there very recent papers (< 3 months) that closely overlap this direction?
-4. **Compute/resource fit** — Does this direction require resources (data scale, GPU hours, proprietary tools) that may be out of reach?
+4. **Compute/resource fit** — Does this direction require resources beyond what is typical for the domain? (See `references/domain.md` "Resource Estimates" for thresholds.)
 
 **Produce a Feasibility Comparison Table:**
 
@@ -339,7 +336,7 @@ My recommendation: Direction [X], because ...
 | Public datasets | ✅ 3 datasets (X, Y, Z) | ⚠️ 1 dataset, proprietary | ✅ 2 datasets (X, Y) |
 | Baselines with code | ✅ 4/5 have code | ❌ 1/5 have code | ✅ 3/5 have code |
 | Concurrent work risk | ⚠️ 1 recent overlap | ✅ Low | ✅ Low |
-| Compute feasibility | ✅ Single GPU OK | ❌ Needs 8×A100 | ✅ Single GPU OK |
+| Compute feasibility | ✅ Within budget | ❌ Exceeds budget | ✅ Within budget |
 | **Quick Score** | **★★★★☆** | **★★☆☆☆** | **★★★★☆** |
 
 **Recommendation:** Direction [X], because it has the best feasibility profile: [specific reasoning].
@@ -971,8 +968,9 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 ## Reference Files
 
 Load on demand:
+- `references/domain.md` — **domain configuration** (target venues, databases, resource estimates, domain examples). Replace this file to adapt the skill for a different research domain.
 - `references/iteration-loop.md` — detailed loop logic and loop-back decision tree
-- `references/conference-readiness.md` — top venue criteria, scoring rubrics, rejection patterns
+- `references/conference-readiness.md` — scoring rubrics, checklists, readiness decision tree
 - `references/gap-analysis-guide.md` — 5 gap types, analysis dimensions, examples
 - `references/5w1h-framework.md` — 5W1H framework for Phase 0
 - `references/literature-search-strategies.md` — keyword construction and database search tips
