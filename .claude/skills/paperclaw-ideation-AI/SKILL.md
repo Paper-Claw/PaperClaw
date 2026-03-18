@@ -37,12 +37,12 @@ Raw Idea
   ▼
 [Phase 4] Sharpen             — SMART RQ, theory, Lean 4 verify, method design, experiment plan
   │                             ├─ Lean 4 PASS → continue to Method Design
-  │                             ├─ Lean 4 FAIL (fixable) → retry Step 2 (max 5)
+  │                             ├─ Lean 4 FAIL (fixable) → retry Step 2 (max 10)
   │                             └─ Lean 4 FAIL (fundamental) → escalate to earlier phase
   ▼
 [Handoff] Generate draft Proposal.md → submit to independent review panel
   │
-  ├─ Review feedback received → iterate based on qualitative concerns (max 4 rounds)
+  ├─ Review feedback received → iterate based on qualitative concerns (max 10 rounds)
   │
   └─ Review passed → generate final Proposal (HTML, CN, BibTeX)
 ```

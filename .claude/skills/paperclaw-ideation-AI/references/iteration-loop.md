@@ -17,7 +17,7 @@ Iteration N
   └── Regenerate draft Proposal.md → set state to review-pending
 ```
 
-**Maximum iterations:** 4. After 4 rounds of review feedback, the orchestrator generates the final Proposal anyway with a caveat note. The iteration count is managed by the review-gate orchestrator, not the ideation model.
+**Maximum iterations:** 10. After 10 rounds of review feedback, the orchestrator generates the final Proposal anyway with a caveat note. The iteration count is managed by the review-gate orchestrator, not the ideation model.
 
 ---
 
