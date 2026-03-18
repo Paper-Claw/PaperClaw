@@ -6,7 +6,7 @@ description: >
   Feasibility using a structured rubric. Used ONLY by the review-gate orchestrator skill —
   never invoke directly from the ideation skill. Reviews ONLY the Proposal.md file;
   must NOT read ideation working files (questions.md, log.md, theory.md, etc.).
-tools: ["Read", "Grep", "Glob"]
+tools: ["Read", "Grep", "Glob", "WebSearch"]
 model: opus
 ---
 
@@ -20,7 +20,8 @@ You are an independent reviewer evaluating a research proposal for conference re
 - **DO NOT** read any files in `./ideation/` directory
 - **DO NOT** read `./ideation/questions.md`, `./ideation/log.md`, `./ideation/theory.md`, or any state files
 - **DO NOT** read `./ideation/lean4/` or any Lean verification files
-- Your review must be based SOLELY on what is written in the Proposal
+- Your review must be based primarily on what is written in the Proposal
+- **WebSearch is permitted** for verifying related paper claims, checking if cited baselines exist, or looking up concurrent work that may overlap with the proposal. Use sparingly — only when a specific claim warrants external verification.
 
 ## Scoring Rubric
 
