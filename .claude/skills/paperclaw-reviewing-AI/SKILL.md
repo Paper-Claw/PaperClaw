@@ -5,7 +5,7 @@ description: >
   3-5 reviewers from different AI model families (Claude, GPT, Gemini, DeepSeek, Kimi),
   aggregates scores, strips numeric scores from feedback sent to the ideation model,
   and manages the pass/fail gate. Use when ./ideation/state.md shows Phase: review-pending.
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Review Gate Orchestrator
@@ -18,28 +18,54 @@ Read `./ideation/state.md`. If `Phase: review-pending`, begin the review process
 
 ---
 
-## Step 1: Auto-Detect Available Reviewers
+## Step 1: Auto-Detect Available Reviewers & Models
 
-Detect available AI CLI tools and select the best model from each family:
+Detect available AI CLI tools, query their model lists at runtime, and select the best model from each family.
+
+### 1a. Check tool availability
 
 ```bash
-# Check available tools
 command -v codex &>/dev/null && echo "codex available"
 command -v opencode &>/dev/null && echo "opencode available"
 # Claude Code is always available via Agent tool
 ```
 
-**Model selection (best per family):**
+### 1b. Query available models dynamically
 
-| Priority | Family | Best Model | Tool | Fallback |
-|----------|--------|-----------|------|----------|
-| 1 | Claude | `claude-opus-4-6` | Agent tool (`paperclaw-reviewer` agent) | Always available |
-| 2 | GPT | `gpt-5.4` | `codex exec` | Skip if codex unavailable |
-| 3 | Gemini | `gemini-3.1-pro-preview` | `opencode run -m github-copilot/gemini-3.1-pro-preview` | Skip if opencode unavailable |
-| 4 | DeepSeek | `deepseek-reasoner` | `opencode run -m deepseek/deepseek-reasoner` | Skip if unavailable |
-| 5 | Kimi | `k2p5` | `opencode run -m kimi-for-coding/k2p5` | Skip if unavailable |
+**Do NOT hardcode model names.** Always query models at runtime:
 
-**Minimum 3 reviewers required.** If fewer than 3 model families are available, use Claude with different personas to fill the gap.
+```bash
+# Codex: read default model from config, or list via exec help
+cat ~/.codex/config.toml 2>/dev/null | grep '^model' | head -1
+
+# OpenCode: list all available models (this is the authoritative source)
+opencode models 2>/dev/null
+```
+
+### 1c. Select best model per family from the live model list
+
+Parse the `opencode models` output and pick the **best** (highest version number) model for each family:
+
+| Family | Selection Rule | Provider Prefix | Example Pick |
+|--------|---------------|-----------------|-------------|
+| GPT | Highest versioned non-mini, non-codex GPT model from `openai/` or `github-copilot/` | `openai/`, `github-copilot/` | e.g. `github-copilot/gpt-5.4` |
+| Gemini | Highest versioned `gemini-*-pro*` from `github-copilot/` | `github-copilot/` | e.g. `github-copilot/gemini-3.1-pro-preview` |
+| DeepSeek | Prefer `deepseek/deepseek-reasoner`, fallback to `deepseek/deepseek-chat` | `deepseek/` | e.g. `deepseek/deepseek-reasoner` |
+| Kimi | Prefer highest versioned `kimi-for-coding/k*` model | `kimi-for-coding/` | e.g. `kimi-for-coding/k2p5` |
+
+**For codex (GPT via codex):** Use the model from `~/.codex/config.toml` as default. This is the user's pre-configured best GPT model. Use `codex exec -m <model>` only if you want to override it.
+
+### 1d. Assemble the reviewer panel
+
+| Priority | Reviewer | Tool | How to Select Model |
+|----------|----------|------|---------------------|
+| 1 | R1 (Claude) | Agent tool (`paperclaw-reviewer` agent) | Always available, no model query needed |
+| 2 | R2 (GPT) | `codex exec` | Use default from `~/.codex/config.toml` |
+| 3 | R3 (Gemini) | `opencode run -m <best-gemini>` | Pick from `opencode models` output |
+| 4 | R4 (DeepSeek) | `opencode run -m <best-deepseek>` | Pick from `opencode models` output |
+| 5 | R5 (Kimi) | `opencode run -m <best-kimi>` | Pick from `opencode models` output |
+
+**Minimum 3 reviewers required.** If fewer than 3 external model families are available, use Claude with different personas to fill the gap (see Step 3 fallback).
 
 ---
 
@@ -57,7 +83,7 @@ Each reviewer gets a unique persona to maximize review diversity:
 
 ---
 
-## Step 3: Dispatch Reviewers in Parallel
+## Step 3: Dispatch Reviewers in Parallel (with Timeout & Fallback)
 
 All reviewers run simultaneously. Each receives:
 1. Their assigned persona
@@ -65,31 +91,57 @@ All reviewers run simultaneously. Each receives:
 3. Instructions to read ONLY `./Proposal.md`
 4. The required output format
 
+**Timeout: 5 minutes per external reviewer.** If a reviewer process does not complete within 5 minutes, kill it and trigger the fallback chain.
+
+### Fallback Chain (per reviewer slot)
+
+When an external reviewer fails (error, timeout, model not found), apply this fallback order:
+
+```
+codex (GPT) → opencode (same family) → opencode (any available family) → Claude persona
+```
+
+Specifically:
+- **R2 (GPT) fails**: Try `opencode run -m <best-gpt-from-opencode-models>` → Claude "Applied ML" persona
+- **R3 (Gemini) fails**: Try next best Gemini model from opencode → Claude "Novelty Assessor" persona
+- **R4 (DeepSeek) fails**: Try `deepseek/deepseek-chat` if `deepseek-reasoner` failed → Claude "Devil's Advocate" persona
+- **R5 (Kimi) fails**: Try alternative Kimi model → Claude "Breadth Reviewer" persona
+
+**Claude persona fallback**: When falling back to Claude, launch a `paperclaw-reviewer` agent with the specific persona instructions. Tag the review file with `[Claude-fallback]` so aggregation knows.
+
 ### Claude Reviewer (R1)
 Launch via Agent tool with `paperclaw-reviewer` agent. Pass persona as part of the prompt.
 
-### Codex CLI Reviewers (R2)
+### Codex CLI Reviewer (R2 — GPT)
 ```bash
-codex exec \
-  -c model="gpt-5.4" \
+# Use default model from ~/.codex/config.toml (no need to specify -c model)
+timeout 300 codex exec \
   -c 'sandbox_permissions=["disk-full-read-access"]' \
-  -o ./ideation/reviews/iteration-N/R2-gpt.md \
   "$(cat <<'PROMPT'
 [Persona + rubric + format instructions]
 Read ONLY ./Proposal.md. Do NOT read files in ./ideation/.
+Write your review to ./ideation/reviews/iteration-N/R2-gpt.md
 PROMPT
 )"
 ```
 
 ### OpenCode Reviewers (R3, R4, R5)
 ```bash
-opencode run \
-  -m [provider/model] \
-  --dir . \
-  "[Persona + rubric + format instructions. Read ONLY ./Proposal.md.]"
+# Use the model selected dynamically in Step 1c
+timeout 300 opencode run \
+  -m <selected-provider/model> \
+  "[Persona + rubric + format instructions. Read ONLY ./Proposal.md. Write review to ./ideation/reviews/iteration-N/RX-<family>.md]"
 ```
 
-Save each review to `./ideation/reviews/iteration-N/RX-[model].md`.
+### Handling Failures
+
+After dispatching all reviewers in parallel (via background Bash with `run_in_background`):
+1. Wait for each reviewer to complete (up to 5 min timeout)
+2. Check if the expected review file was created and is non-empty
+3. If missing or empty: log the failure reason, trigger the next fallback in the chain
+4. Continue until at least 3 valid reviews are collected
+
+Save each review to `./ideation/reviews/iteration-N/RX-[family].md`.
 
 ---
 
