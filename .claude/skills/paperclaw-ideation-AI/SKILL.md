@@ -1,5 +1,5 @@
 ---
-name: paperclaw-AI-ideation
+name: paperclaw-ideation-AI
 description: Use when the user wants to "brainstorm a research idea", "polish a paper idea", "find a research direction", "identify research gaps", "start a new project", "check if my idea can get into a top conference", or shares any raw research concept that needs refinement. Runs an auto-pilot loop of literature search → synthesis → auto-decision → refinement until the idea reaches top-conference publication quality (target venues defined in references/domain.md). Produces a complete Proposal with all auto-decisions logged for user review. Supports re-running with user overrides.
 version: 1.0.0
 ---
@@ -10,8 +10,7 @@ An **auto-pilot**, literature-driven loop that takes a raw research spark and re
 
 ## Core Principle
 
-**Do NOT generate a final research proposal until the idea passes the Conference Readiness Gate.**
-Every loop iteration ends with a readiness score. If the idea is not ready, identify the weakest dimension and loop back with a targeted improvement task. All decisions are made autonomously and logged to `./ideation/questions.md` for post-hoc user review.
+**Maximize proposal quality under uncertainty.** You know the target conference's expectations from `references/domain.md` (reviewer priorities, common rejection reasons, what gets accepted), but you do NOT know the specific scoring rubric or pass/fail thresholds used by the independent review panel. Work as a real researcher would: make the proposal as strong as possible, then submit for external review. After Phase 4, hand off the draft Proposal to the review panel. If the reviewers return qualitative feedback, iterate based on their concerns. All decisions are made autonomously and logged to `./ideation/questions.md` for post-hoc user review.
 
 ---
 
@@ -41,11 +40,11 @@ Raw Idea
   │                             ├─ Lean 4 FAIL (fixable) → retry Step 2 (max 5)
   │                             └─ Lean 4 FAIL (fundamental) → escalate to earlier phase
   ▼
-[Gate]  Conference Readiness Check (Novelty / Significance / Soundness / Feasibility)
+[Handoff] Generate draft Proposal.md → submit to independent review panel
   │
-  ├─ NOT READY → auto loop back (max 4 iterations)
+  ├─ Review feedback received → iterate based on qualitative concerns (max 4 rounds)
   │
-  └─ READY → generate full Research Proposal (with Section 9: Alternative Directions)
+  └─ Review passed → generate final Proposal (HTML, CN, BibTeX)
 ```
 
 Persist loop state to `./ideation/state.md` so the session can be resumed.
@@ -75,7 +74,8 @@ When choosing between options, apply this priority order:
 | Phase 2.5 confirmation | Wait for user to confirm recommendation | Auto-select best feasibility profile |
 | Phase 4 RQ/method confirmation | AskUserQuestion | Auto-proceed, log to questions.md |
 | Phase 4 Lean 4 verification | N/A (new) | Auto-retry on failure (max 5), auto-escalate if fundamental flaw |
-| Gate decision | Ask user to iterate or accept | Auto loop-back if NOT READY (max 4 iterations) |
+| Proposal handoff | N/A | Generate draft Proposal.md, set state to review-pending, await external review |
+| Revision from feedback | N/A | Read qualitative feedback from review panel, iterate on weakest areas |
 
 ### Resume with User Overrides
 
@@ -111,8 +111,9 @@ After reviewing the Proposal and `./ideation/questions.md`, the user can re-invo
 | Phase 4 | `Bash` | Install Lean 4 locally via elan (if not present); run `lake build` to verify proofs |
 | Phase 4 | `Write` | Generate `.lean` files in `./ideation/lean4/`; log verification results to questions.md |
 | Phase 4 | `Write` | Log SMART RQ and method design decisions to `./ideation/questions.md` |
-| Gate | `Write` | Log score card and loop-back decision to `./ideation/questions.md` |
-| Proposal | `Write` | Generate `./Proposal.md`, `./Proposal.html`, `./Proposal_cn.html`, `./reference.bib` |
+| Handoff | `Write` | Generate draft `./Proposal.md`, update state to review-pending |
+| Revision | `Read` | Read `./ideation/review-feedback-N.md` from review panel |
+| Proposal | `Write` | Generate final `./Proposal.md`, `./Proposal.html`, `./Proposal_cn.html`, `./reference.bib` (after review PASS) |
 | Proposal | `WebSearch` | Search for official BibTeX entries (DBLP, Semantic Scholar) for `./reference.bib` |
 | All | `TodoWrite` | Track current phase and progress within each phase |
 
@@ -127,7 +128,7 @@ After reviewing the Proposal and `./ideation/questions.md`, the user can re-invo
 
 ## Two Persistent Mental Frameworks
 
-These two frameworks apply at **every phase**, not just Phase 0. Revisit them actively after each new piece of evidence (a paper, a user answer, a gate score).
+These two frameworks apply at **every phase**, not just Phase 0. Revisit them actively after each new piece of evidence (a paper, reviewer feedback, a feasibility finding).
 
 ### 5W1H — Continuously Updated
 
@@ -415,30 +416,34 @@ After generating `./ideation/theory.md`, formally verify key theoretical claims 
 
 #### 2.5.1 — Local Lean 4 Environment Setup
 
-All Lean 4 toolchains and binaries are kept **inside the project** to avoid polluting the global system.
+**Prefer system-level Lean 4 if available.** If the system already has `lean` and `lake` on PATH with cached Mathlib, use them directly — this avoids slow re-downloads and leverages pre-cached dependencies.
 
-**First-time setup** (skip if `./ideation/lean4/.elan/bin/lean` already exists):
+**Setup priority order:**
 
-1. Set local elan home and install elan locally:
+1. **System Lean 4 + cached Mathlib** (fastest): Check if `lean --version` and `lake --version` succeed. If yes, use system Lean 4 directly — no local installation needed. Initialize the project in `./ideation/lean4/` and run `lake exe cache get` to use the system's Mathlib cache.
+
+2. **Local elan installation** (fallback if no system Lean 4):
    ```bash
    export ELAN_HOME="$(pwd)/ideation/lean4/.elan"
    curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | ELAN_HOME="$(pwd)/ideation/lean4/.elan" sh -s -- -y --default-toolchain none
    export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH"
    ```
-2. Initialize the Lean 4 project:
-   ```bash
-   mkdir -p ./ideation/lean4 && cd ./ideation/lean4
-   echo "leanprover/lean4:v4.18.0-rc1" > lean-toolchain
-   lake init IdeationProofs
-   ```
-3. If Mathlib is needed (determined in step 2.5.3), add it to `lakefile.lean` and run:
-   ```bash
-   cd ./ideation/lean4 && lake update && lake exe cache get
-   ```
 
-**On subsequent runs:** Check `./ideation/lean4/.elan/bin/lean --version`. If present, just set `ELAN_HOME` and `PATH`, skip installation.
+**Project initialization** (either path):
+```bash
+mkdir -p ./ideation/lean4 && cd ./ideation/lean4
+echo "leanprover/lean4:v4.18.0-rc1" > lean-toolchain
+lake init IdeationProofs
+```
 
-**All Bash commands in this step MUST prefix with:**
+If Mathlib is needed, add it to `lakefile.lean` and run:
+```bash
+cd ./ideation/lean4 && lake update && lake exe cache get
+```
+
+**On subsequent runs:** Check `./ideation/lean4/lakefile.lean` exists. If yes, just run `lake build` — no setup needed.
+
+**If using local elan, all Bash commands MUST prefix with:**
 ```bash
 export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH" &&
 ```
@@ -460,13 +465,8 @@ Scan `./ideation/theory.md` and classify each theoretical claim:
 **Rules:**
 - Only formalize claims marked "Yes" or "Partially"
 - For "Partially" formalizable: formalize structure, use `sorry` for empirical sub-goals, document why
-- **Skip is ONLY permitted when ALL 3 conditions hold:**
-  1. theory.md contains ZERO theorems, propositions, or lemmas (purely empirical/systems work)
-  2. No mathematical claims are made about convergence, bounds, complexity, or optimality
-  3. The work does not claim any theoretical advantage over existing methods
-  If ANY theorem, bound, or formal claim exists in theory.md, Lean 4 verification MUST be attempted.
-  Venue norms are NOT a valid skip reason.
-- When skipping, log to questions.md: the specific check against all 3 skip conditions (not just a venue justification)
+- **Lean 4 verification is MANDATORY for all theoretical claims.** If theory.md contains ANY theorem, proposition, lemma, convergence claim, bound, or complexity claim, you MUST attempt Lean 4 formalization. Do NOT self-evaluate whether to skip — the independent review panel will audit whether your theoretical claims warranted formal verification. If you skip verification for claims that should have been verified, reviewers will flag this as a weakness.
+- For purely empirical work with zero formalizable claims: still log to questions.md that no formalizable claims exist, with evidence (list the claims in theory.md and explain why each is empirical/non-formalizable)
 
 #### 2.5.3 — Generate Lean 4 Code
 
@@ -581,49 +581,37 @@ Design a comprehensive experimental plan:
 
 ---
 
-## Conference Readiness Gate
+## Proposal Handoff
 
-Evaluate the current idea state on four dimensions. Score each 1-5.
+After Phase 4 is complete, generate `./Proposal.md` (draft version) and hand off to the independent review panel.
 
-**Scoring rubric** (detailed in `references/conference-readiness.md`):
+**CRITICAL: Proposal.md is the ONLY document the review panel sees.** Reviewers cannot access `./ideation/theory.md`, `./ideation/lean4/`, `./ideation/literature.md`, or any working files. The Proposal must be **completely self-contained** with full theory, complete proofs, full Lean 4 source code, and comprehensive literature analysis. Do NOT summarize or abbreviate — include everything the reviewers need to evaluate the proposal's quality.
 
-| Dimension | Score | What to Check |
-|-----------|-------|---------------|
-| **Novelty** | /5 | Is there a genuinely new contribution? Score 5: new problem or contradicts existing understanding. Score 4: new mechanism. Score 3: non-trivial adaptation with emergent properties. See `references/conference-readiness.md` and `references/domain.md` for calibration. |
-| **Significance** | /5 | Do top-venue researchers care? Is the problem important enough? |
-| **Technical Soundness** | /5 | Is the method theoretically grounded? Are claims testable? |
-| **Experimental Feasibility** | /5 | Can experiments be run with available compute and data? |
+1. Write `./ideation/state.md` with `Phase: review-pending`
+2. Append to `./ideation/log.md`: "Phase 4 complete. Proposal draft generated. Handing off to review panel."
+3. Output: "Draft Proposal generated. Submitting to independent review panel."
+4. **STOP ideation.** Do NOT evaluate the proposal yourself. Do NOT score it on any dimensions.
 
-**Readiness threshold:** Total ≥ 16/20, with no single dimension below 3.
+You know the target conference's expectations from `references/domain.md` (reviewer priorities, common rejection reasons, what gets accepted). Use that knowledge throughout Phases 0-4 to make the proposal as strong as possible. But you do NOT know how the review panel will score you — maximize quality under uncertainty, just like real researchers submitting to a conference.
 
-**Lean 4 Verification Factor (adjusts Technical Soundness score):**
-- FULL PASS (no sorry): +1 to Soundness (cap at 5)
-- PARTIAL PASS (sorry only on empirical sub-goals): no change
-- Skipped (all 3 skip conditions met — no formalizable claims): no change
-- Skipped WITHOUT meeting all 3 skip conditions: -1 to Soundness (unjustified skip of verification)
-- FAIL after 5 retries (proceeded anyway): -1 to Soundness (floor at 1)
-- Escalation triggered: Soundness capped at 2 (fundamental theoretical issues detected; triggers loop-back)
+### Revision from Reviewer Feedback
 
-**Gate outcome:**
-- **READY (≥16, no dim <3):** Proceed to Research Proposal generation.
-- **NOT READY:** Report the weakest dimension, explain what is missing, propose a targeted improvement task, and loop back:
-  - Low Novelty → back to Phase 2 (find a sharper angle or different direction)
-  - Low Significance → back to Phase 0/2 (reframe problem or switch domain)
-  - Low Soundness → back to Phase 4 (strengthen the method sketch; if Lean 4 verification failed, re-examine theory.md and retry verification)
-  - Low Feasibility → back to Phase 4 (adjust scope or resources)
+If the review panel returns qualitative feedback at `./ideation/review-feedback-N.md`:
 
-**Auto-pilot gate behavior:**
-- **READY:** Proceed directly to Proposal generation.
-- **NOT READY:** Automatically loop back to the appropriate phase based on the weakest dimension. Log the gate score, weakest dimension, and loop-back decision to `./ideation/questions.md`.
-- **Max 4 iterations:** If after 4 gate checks the idea still does not pass, generate the Proposal anyway with a caveat note in Section 9. Log all gate scores and the decision to proceed despite not passing.
+1. Read the feedback file carefully — it contains themes and concerns, NOT numeric scores
+2. Identify the primary concerns raised by reviewers
+3. For each concern, determine which phase to revisit (see `references/iteration-loop.md` for the feedback-to-phase mapping)
+4. Re-run from the earliest affected phase forward
+5. Regenerate `./Proposal.md` draft
+6. Set state to `Phase: review-pending` again
 
-Present the score card as text output (for the user to see in real-time) but do NOT wait for user input.
+The review panel controls the iteration count and pass/fail decision — you simply respond to their feedback and resubmit.
 
 ---
 
 ## Research Proposal Output
 
-Generated only after passing the Conference Readiness Gate (or explicit user override).
+Generated after the independent review panel signals PASS (or after max iterations with caveat). The initial draft `./Proposal.md` is generated at the end of Phase 4 for review; the final HTML/CN/BibTeX files are generated only after the review panel approves.
 
 **Four output files are produced:**
 
@@ -666,7 +654,14 @@ The HTML files (`Proposal.html` and `Proposal_cn.html`) must use `<details>` and
    .proof { margin-top: 0.5em; padding-left: 1em; border-left: 3px solid #3498db; }
    ```
 
-The Markdown file (`Proposal.md`) includes both proof outlines and detailed proofs inline (no collapsing in Markdown). Lean 4 code is included as fenced code blocks.
+The Markdown file (`Proposal.md`) includes everything inline with no collapsing (Markdown has no `<details>` equivalent):
+- **Proof outlines:** always visible
+- **Detailed proofs:** fully expanded inline, every step shown
+- **Lean 4 source code:** complete `.lean` file content in fenced ```lean blocks (NOT summaries or excerpts — the FULL source)
+- **Verification logs:** `lake build` output included
+- **Sorry analysis:** each `sorry` item explained if any exist
+
+This is critical because Proposal.md is the ONLY material the review panel receives. All content from `./ideation/theory.md` and `./ideation/lean4/` must be fully copied into Section 4.
 
 ### reference.bib Generation
 
@@ -733,6 +728,12 @@ Use in-text citations as "[N]" referencing the numbered list in Section 10.]
 
 ## 4. Theoretical Analysis
 
+**CRITICAL: Proposal.md is the ONLY material the review panel sees.** They cannot access
+`./ideation/theory.md`, `./ideation/lean4/`, or any working files. Therefore, Section 4
+must be **completely self-contained** — every definition, every proof step, every Lean 4
+source file must be fully embedded here. Do NOT summarize or abbreviate. Completeness
+is more important than brevity in this section.
+
 ### 4.1 Why This Theory Is Needed
 [1-2 paragraphs explaining:
 - What specific limitation of existing methods this theory addresses
@@ -743,26 +744,70 @@ Use in-text citations as "[N]" referencing the numbered list in Section 10.]
 This subsection bridges Sections 2-3 (problems/gaps) and the formal results below.]
 
 ### 4.2 Mathematical Foundation
-[Problem formalization with precise notation. Define input space, output space,
-objective function, constraints. Formal mathematical model of the proposed solution.]
+[Problem formalization with precise notation. This must be rigorous and complete:
+- Define ALL notation used in subsequent proofs (variable names, spaces, operators)
+- Define the input space, output space, and objective function formally
+- State all constraints and assumptions explicitly
+- Provide the formal mathematical model of the proposed solution
+- Include key definitions (Definition 1, Definition 2, ...) that proofs depend on
+- If the method introduces new mathematical objects, define them precisely here
+
+Target: complete enough that a reviewer can follow every proof below without
+needing any external reference.]
 
 ### 4.3 Main Theoretical Results
-[For EACH theorem/proposition, provide ALL of the following:
+[For EACH theorem/proposition, provide ALL of the following in full:
 
 **Theorem N: [Name]**
-- **Statement:** Formal mathematical statement with all variables defined
-- **Proof Outline:** 3-5 step high-level proof strategy (always visible in all formats)
-- **Detailed Proof:** Full proof with all steps justified (in Proposal.md: inline;
-  in HTML files: inside a collapsible `<details>` block, default collapsed)
-- **Lean 4 Verification:** Status (PASS / PARTIAL with sorry items / FAIL with explanation
-  / SKIPPED with justification). In HTML files: Lean 4 source code inside a collapsible
-  `<details>` block, default collapsed.
+
+- **Assumptions:** List every assumption required (numbered A1, A2, ... for
+  cross-referencing). State whether each assumption is standard or novel.
+
+- **Statement:** Formal mathematical statement with all variables defined.
+  Self-contained — a reader should understand this without reading prior sections.
+
+- **Proof Outline:** 3-5 step high-level proof strategy (always visible in all formats).
+
+- **Detailed Proof:** Complete, step-by-step proof with ALL intermediate steps
+  justified. Do NOT skip steps or write "it is easy to see that..." — every
+  derivation must be explicit. Include:
+  - Key lemmas (stated and proved inline if not standalone)
+  - All algebraic manipulations shown
+  - References to which assumptions are used at each step
+  - Connections to known results (with citations)
+  In Proposal.md: inline, fully expanded.
+  In HTML files: inside a collapsible `<details>` block, default collapsed.
+
+- **Lean 4 Verification:** This subsection must include:
+  1. **Status:** FULL PASS / PARTIAL PASS (with sorry count) / FAIL (with explanation)
+  2. **Complete Lean 4 source code:** The FULL `.lean` file content, not a summary.
+     Include all imports, definitions, and proof terms. In Proposal.md: as a fenced
+     ```lean code block. In HTML: inside a collapsible `<details>` block.
+  3. **Verification log:** The `lake build` output (success or error messages)
+  4. **Sorry items** (if any): List each `sorry` with an explanation of why it
+     could not be discharged and what it would require
+  5. **Gap analysis** (if PARTIAL/FAIL): What the gap between the paper proof and
+     the Lean proof tells us about the claim's robustness
+
 - **Implications:** What this result means for the proposed method; how it addresses
-  a specific gap from Section 3
+  a specific gap from Section 3. What would change in the method design if this
+  result did not hold.
 
 Explicitly state all assumptions required for each result.
-Source: ./ideation/theory.md + ./ideation/lean4/
-Target: 1-3 theorems/propositions with BOTH proof outlines AND detailed proofs.]
+Source: copy FULL content from ./ideation/theory.md + ./ideation/lean4/
+Target: 1-3 theorems/propositions with COMPLETE proofs and COMPLETE Lean 4 code.]
+
+### 4.4 Verification Summary
+
+| Theorem | Formalizable? | Lean 4 Status | Sorry Count | Key Insight |
+|---------|--------------|---------------|-------------|-------------|
+| Theorem 1: [Name] | Yes/Partially | PASS/PARTIAL/FAIL | N | [what verification revealed] |
+| ... | ... | ... | ... | ... |
+
+[If any claims were not formalized in Lean 4, explain WHY for each one
+(e.g., requires dependent types not yet in Mathlib, involves probabilistic
+reasoning beyond current Lean 4 libraries, etc.). The review panel will
+independently assess whether the justification is valid.]
 
 ## 5. Proposed Method
 
@@ -898,9 +943,8 @@ Source: ./ideation/papers.md and ./ideation/literature.md]
 
 ## Appendix
 
-### A. Conference Readiness Score
-Novelty: X/5 | Significance: X/5 | Soundness: X/5 | Feasibility: X/5
-Total: XX/20
+### A. Review Panel Summary
+[Populated by the review-gate orchestrator after review passes. Contains aggregated reviewer feedback themes and final decision. The ideation model does not generate this section — it is filled in by the orchestrator.]
 
 ### B. Timeline
 - Month 1-2: ...
@@ -976,13 +1020,11 @@ Overwrite this file after every phase transition. It always reflects the latest 
 # Ideation State
 
 **Idea:** [one-line summary]
-**Phase:** [0 / 1 / 2 / 2.5 / 3 / 4 / Gate / Done]
+**Phase:** [0 / 1 / 2 / 2.5 / 3 / 4 / review-pending / revision-N / Done]
 **Iteration:** [N]
 **Direction:** [chosen direction title, or "TBD"]
-**Last Score:** N: X/5 | S: X/5 | T: X/5 | F: X/5 | Total: XX/20  (or "-" if not yet scored)
-**Lean4Status:** [not_started / in_progress / pass / partial_pass / fail / skipped / escalated]
+**Lean4Status:** [not_started / in_progress / pass / partial_pass / fail]
 **Lean4Attempt:** [0-5]
-**Lean4Escalation:** [true / false]
 **Next Action:** [what to do when this session resumes]
 **Updated:** [YYYY-MM-DD]
 ```
@@ -1015,17 +1057,10 @@ Append one entry per completed phase or gate check. Never overwrite. This is the
 |-------------|-------------|-----|---------|
 | [Direction pivot / Scope change / Method revision / Problem reframing / ...] | [description] | [reason] | [result] |
 
-### Gate Score (if this was a Gate check)
-| Dimension | Score | Reason |
-|-----------|-------|--------|
-| Novelty | X/5 | [one-line justification] |
-| Significance | X/5 | [one-line justification] |
-| Soundness | X/5 | [one-line justification] |
-| Feasibility | X/5 | [one-line justification] |
-| **Total** | **XX/20** | [READY / NOT READY] |
-
-**Weakest dimension:** [name]
-**Decision:** [what was chosen — direction, fix, pivot, or "proceed"]
+### Handoff / Revision (if this was a review handoff or revision)
+**Action:** [Handed off draft Proposal to review panel / Received reviewer feedback / Final Proposal generated]
+**Reviewer Feedback Themes:** [list of qualitative concerns from review-feedback-N.md, if revising]
+**Decision:** [what was chosen — which phases to revisit, or "proceed to final"]
 
 ---
 ```
@@ -1072,13 +1107,9 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 
 ## Decision #L — Phase 4: Lean 4 Verification (Attempt M/5)
 **Question:** Do the key theoretical claims formally verify in Lean 4?
-**Skip Eligibility Check (required if skipping):**
-- [ ] theory.md contains zero theorems/propositions/lemmas: [yes/no]
-- [ ] No mathematical claims about convergence/bounds/complexity: [yes/no]
-- [ ] No claimed theoretical advantage over existing methods: [yes/no]
-- All three must be "yes" to skip. If any is "no", verification MUST be attempted.
-**Formalizable Claims:** [list of claims attempted, or "N/A — skip justified with all 3 conditions met"]
-**Result:** [FULL PASS / PARTIAL PASS / FAIL: error description / SKIPPED: all 3 conditions met]
+**Formalizable Claims:** [list of claims identified from theory.md, with classification: Yes/Partially/No for each]
+**Claims Not Formalized:** [list any claims classified as "No" with explanation why each is empirical/non-formalizable]
+**Result:** [FULL PASS / PARTIAL PASS / FAIL: error description]
 **Sorry Items:** [list with justification, or "none"]
 **Error Analysis:** [for failures: what went wrong, diagnosis, planned fix]
 **Auto-Choice:** [Proceed to Step 3 / Retry with fix / Escalate to Phase N]
@@ -1087,11 +1118,11 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 
 ---
 
-## Decision #M — Gate: Iteration Loop-Back
-**Question:** Iterate or proceed?
-**Context:** [Gate score: N:X S:X T:X F:X = XX/20, weakest: dimension]
-**Auto-Choice:** Loop back to Phase [N] / Proceed to Proposal
-**Reasoning:** [weakest dimension analysis]
+## Decision #M — Handoff: Draft Proposal Submitted
+**Question:** Is the draft Proposal ready for external review?
+**Context:** [Summary of what was completed in Phases 0-4]
+**Auto-Choice:** Submit to review panel
+**Reasoning:** [Phase 4 checklist items completed]
 **Confidence:** High
 ```
 
@@ -1105,7 +1136,7 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 4. **Literature first, speculation second** — every claim must be grounded in papers
 5. **First principles always on** — at every decision point, decompose to fundamentals, challenge inherited assumptions, and rebuild from scratch (see "Two Persistent Mental Frameworks" above)
 6. **5W1H is a living model** — revisit all six dimensions after every new piece of evidence, not just in Phase 0
-7. **Show scores at every gate** — present gate scores as text output (visible to user in real-time) but do not pause
+7. **Hand off to review** — after generating draft Proposal.md, signal completion and await reviewer feedback. You know the conference bar from domain.md but not the scoring mechanics.
 8. **Feasibility-first selection** — when choosing between options, prioritize feasibility > significance > low risk > novelty
 9. **YAGNI for scope** — cut any claim or experiment that is not needed to demonstrate the core insight
 10. **Resume from state** — always check `./ideation/state.md` and `./ideation/questions.md` before starting; append to `./ideation/log.md` after every phase
@@ -1119,7 +1150,6 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 Load on demand:
 - `references/domain.md` — **domain configuration** (target venues, databases, resource estimates, domain examples). Replace this file to adapt the skill for a different research domain.
 - `references/iteration-loop.md` — detailed loop logic and loop-back decision tree
-- `references/conference-readiness.md` — scoring rubrics, checklists, readiness decision tree
 - `references/gap-analysis-guide.md` — 5 gap types, analysis dimensions, examples
 - `references/5w1h-framework.md` — 5W1H framework for Phase 0
 - `references/literature-search-strategies.md` — keyword construction and database search tips
