@@ -219,20 +219,32 @@ Write this to `./ideation/review-feedback-N.md`.
 
 ### PASS (median total ≥ 16, no median dim < 3)
 1. Update `./ideation/state.md`: `Phase: Done`
-2. Signal the ideation model to generate final output files (HTML, CN, BibTeX)
-3. Write the full aggregation report (with scores) to `./ideation/reviews/iteration-N/aggregation.md`
+2. Write the full aggregation report (with scores) to `./ideation/reviews/iteration-N/aggregation.md`
+3. Write `./ideation/review-feedback-N.md` with the gate result: `GATE: PASS`
+4. **Explicitly invoke the ideation skill** to generate final output files by passing this instruction:
+   > "The review panel has issued a PASS. Read `./Proposal.md` and generate the three final output files: `./Proposal.html` (English, styled HTML with KaTeX), `./Proposal_cn.html` (Chinese translation, styled HTML with KaTeX), and `./reference.bib` (BibTeX). Follow the HTML rendering rules in the Research Proposal Output section exactly. Do not alter `./Proposal.md`."
+5. **Validate outputs**: after the ideation skill completes, verify all four files exist and are non-empty:
+   ```bash
+   test -s ./Proposal.md && echo "OK" || echo "MISSING: Proposal.md"
+   test -s ./Proposal.html && echo "OK" || echo "MISSING: Proposal.html"
+   test -s ./Proposal_cn.html && echo "OK" || echo "MISSING: Proposal_cn.html"
+   test -s ./reference.bib && echo "OK" || echo "MISSING: reference.bib"
+   ```
+6. If any file is missing or empty: re-issue the generation instruction for that specific file only. Repeat up to 2 times.
 
 ### FAIL (below threshold)
 1. Update `./ideation/state.md`: `Phase: revision-N`
 2. Write the qualitative feedback file (scores stripped)
 3. Increment iteration counter
-4. If iteration count < 4: signal the ideation model to revise
-5. If iteration count = 4: force-proceed with caveat note
+4. If iteration count < 10: signal the ideation model to revise
+5. If iteration count = 10: force-proceed with caveat note
 
-### Force-Proceed (after 4 iterations)
+### Force-Proceed (after 10 iterations)
 1. Update `./ideation/state.md`: `Phase: Done`
-2. Add caveat note to the feedback: "The review panel did not reach consensus on readiness after 4 rounds. The following concerns remain unresolved: [list]"
-3. Signal the ideation model to generate final output with the caveat in Section 9
+2. Add caveat note to the feedback: "The review panel did not reach consensus on readiness after 10 rounds. The following concerns remain unresolved: [list]"
+3. **Explicitly invoke the ideation skill** to generate final output files with caveat by passing this instruction:
+   > "The review panel has exhausted 10 revision rounds without reaching consensus. Read `./Proposal.md` and generate the three final output files: `./Proposal.html`, `./Proposal_cn.html`, and `./reference.bib`. Add the following caveat at the top of Section 9 in all three files: 'NOTE: This proposal did not pass the review gate after 10 rounds. Remaining reviewer concerns: [list from feedback].'"
+4. **Validate outputs** (same bash check as in PASS step 5). Retry up to 2 times if any file is missing.
 
 ---
 
