@@ -1,5 +1,5 @@
 ---
-name: paperclaw-reviewing-AI
+name: paperclaw-ideation-reviewing-AI
 description: >-
   Independent review panel orchestrator for research proposal evaluation. Dispatches
   3-5 reviewers from different AI model families (Claude, GPT, Gemini, DeepSeek, Kimi),
@@ -20,6 +20,19 @@ Manage the independent, multi-model review panel for research proposals. Trigger
 > The orchestrator aggregates scores transparently but enforces a strict information barrier:
 > the ideation model never sees numeric scores, dimension labels, or threshold language.
 > The gate decision is communicated exclusively via `state.md`.
+
+---
+
+## Agent Architecture
+
+| Agent | Model | Role |
+|-------|-------|------|
+| `paperclaw-ideation-review-orchestrator` | sonnet | Default workhorse — full 6-step orchestration: CLI detection, reviewer dispatch, score aggregation, Lean 4 audit, metareview synthesis, gate decision |
+| `paperclaw-ideation-reviewer` | opus | R1 Claude review only — independent proposal evaluation |
+
+### How it works
+
+When this skill is triggered (state.md = review-pending), invoke `paperclaw-ideation-review-orchestrator` as the main agent. The orchestrator runs all 6 steps and spawns `paperclaw-ideation-reviewer` (opus) for the R1 Claude review. External reviewers (R2-R5) are dispatched via codex/opencode CLI. The orchestrator handles score aggregation, metareview synthesis (with strict information barrier), and the pass/fail gate.
 
 ---
 
@@ -102,7 +115,7 @@ For codex (GPT): use the model from `~/.codex/config.toml` as default.
 
 | Priority | Reviewer | Tool | Model Source |
 |----------|----------|------|-------------|
-| 1 | R1 (Claude) | Agent tool (`paperclaw-reviewer`) | Always available |
+| 1 | R1 (Claude) | Agent tool (`paperclaw-ideation-reviewer`) | Always available |
 | 2 | R2 (GPT) | `codex exec` | `~/.codex/config.toml` |
 | 3 | R3 (Gemini) | `opencode run -m <model>` | `opencode models` |
 | 4 | R4 (DeepSeek) | `opencode run -m <model>` | `opencode models` |
@@ -144,24 +157,53 @@ Run all reviewers simultaneously, collect at least 3 valid reviews within timeou
 
 ### Steps
 
-All reviewers run simultaneously. Each receives:
-1. Their assigned persona
-2. The scoring rubric (from `references/conference-readiness.md`)
-3. The standardized output format (from `references/review-protocol.md`)
-4. Instructions to read ONLY `./Proposal.md`
+#### Prompt Construction (before dispatching any reviewer)
 
-**Timeout: 5 minutes per external reviewer.**
+Before dispatching reviewers, construct the **base review prompt** that will be embedded in every reviewer's instructions. This is critical because external tools (codex, opencode) cannot access skill reference files.
+
+1. Read the full scoring rubric from `<ref-dir>/conference-readiness.md` (Scoring Rubric section — all 4 dimensions with score descriptions and Lean 4 penalty rules)
+2. Read the standardized output format from `<ref-dir>/review-protocol.md` (Standardized Review Output Format section)
+3. Assemble `BASE_PROMPT`:
+
+```
+You are a research proposal reviewer assigned the following persona: [PERSONA_DESCRIPTION]
+
+=== SCORING RUBRIC ===
+Score each dimension 1–5 based on these criteria:
+
+[PASTE FULL NOVELTY RUBRIC FROM conference-readiness.md]
+
+[PASTE FULL SIGNIFICANCE RUBRIC]
+
+[PASTE FULL TECHNICAL SOUNDNESS RUBRIC — including Lean 4 penalty rules]
+  IMPORTANT: Lean 4 verification is EXPECTED. Full verification does not add points.
+  Missing or incomplete verification (including sorry items) LOWERS Technical Soundness.
+
+[PASTE FULL EXPERIMENTAL FEASIBILITY RUBRIC]
+
+=== OUTPUT FORMAT ===
+[PASTE FULL OUTPUT FORMAT FROM review-protocol.md — Standardized Review Output Format section]
+
+=== INSTRUCTIONS ===
+- Read ONLY ./Proposal.md — do NOT read ./ideation/ or any other files
+- WebSearch is permitted sparingly to verify cited baselines or concurrent work
+- Write your review to: [REVIEW_FILE_PATH]
+```
+
+4. For each reviewer, substitute `[PERSONA_DESCRIPTION]` with the persona from Step 2 and `[REVIEW_FILE_PATH]` with the expected output path.
+
+All reviewers run simultaneously with this embedded prompt. **Timeout: 5 minutes per external reviewer.**
 
 #### Claude Reviewer (R1)
 
-Launch via Agent tool with `paperclaw-reviewer` agent. Pass persona as part of the prompt.
+Launch via Agent tool with `paperclaw-ideation-reviewer` agent. Pass the persona and constructed prompt as part of the agent prompt.
 
 #### Codex CLI Reviewer (R2 — GPT)
 
 ```bash
 timeout 300 codex exec \
   -c 'sandbox_permissions=["disk-full-read-access"]' \
-  "[Persona + rubric + format. Read ONLY ./Proposal.md. Write review to ./ideation/reviews/iteration-N/R2-gpt.md]"
+  "[BASE_PROMPT with R2 persona substituted. Write review to ./ideation/reviews/iteration-N/R2-gpt.md]"
 ```
 
 #### OpenCode Reviewers (R3, R4, R5)
@@ -169,7 +211,7 @@ timeout 300 codex exec \
 ```bash
 timeout 300 opencode run \
   -m <selected-provider/model> \
-  "[Persona + rubric + format. Read ONLY ./Proposal.md. Write review to ./ideation/reviews/iteration-N/RX-<family>.md]"
+  "[BASE_PROMPT with RX persona substituted. Write review to ./ideation/reviews/iteration-N/RX-<family>.md]"
 ```
 
 #### Fallback Chain
@@ -180,7 +222,7 @@ When an external reviewer fails (error, timeout, model not found):
 codex (GPT) → opencode (same family) → opencode (any available family) → Claude persona
 ```
 
-**Claude persona fallback:** Launch a `paperclaw-reviewer` agent with the specific persona instructions. Tag the review file with `[Claude-fallback]`.
+**Claude persona fallback:** Launch a `paperclaw-ideation-reviewer` agent with the specific persona instructions. Tag the review file with `[Claude-fallback]`.
 
 #### Failure Handling
 
@@ -289,8 +331,8 @@ Determine pass/fail, update state, and invoke the ideation skill for next action
 
 ### PASS (median total >= 16, no median dim < 3)
 
-1. Update `./ideation/state.md`: `Phase: Done`
-2. Write aggregation report to `./ideation/reviews/iteration-N/aggregation.md`
+1. Write aggregation report to `./ideation/reviews/iteration-N/aggregation.md`
+2. Update `./ideation/state.md`: `Phase: generating-outputs` (NOT `Done` yet — output generation must complete before marking Done)
 3. **Invoke the ideation skill** via the Skill tool with this instruction:
    > "The review panel has issued a PASS. Read `./Proposal.md` and generate the four final output files: `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, and `./reference.bib`. Follow the HTML rendering rules in the Research Proposal Output section exactly. Do not alter `./Proposal.md`."
 4. **Validate outputs** — verify all 5 files exist and are non-empty:
@@ -300,23 +342,27 @@ Determine pass/fail, update state, and invoke the ideation skill for next action
    done
    ```
 5. If any file is missing: re-issue generation instruction for that specific file. Retry up to 2 times.
+6. Update `./ideation/state.md`: `Phase: Done` — only after all output files are validated.
 
 ### FAIL (below threshold, iteration < 10)
 
-1. Update `./ideation/state.md`: `Phase: revision-N` (increment `Iteration:` field)
-2. Write metareview to `./ideation/reviews/iteration-N/metareview.md` (qualitative only)
-3. Write aggregation report to `./ideation/reviews/iteration-N/aggregation.md` (scores, for orchestrator record)
-4. **Invoke the ideation skill** via the Skill tool with:
+Let **N** = current `Iteration` value read from `./ideation/state.md` **before making any changes**. All subsequent file paths and state updates use this saved value of N.
+
+1. Write metareview to `./ideation/reviews/iteration-N/metareview.md` (qualitative only) — using N saved above
+2. Write aggregation report to `./ideation/reviews/iteration-N/aggregation.md` (scores, for orchestrator record) — using N saved above
+3. Update `./ideation/state.md`: set `Phase: revision-N` and `Iteration: N+1` — where N is the value saved above
+4. **Invoke the ideation skill** via the Skill tool with this instruction (substitute the actual value of N):
    > "Review panel feedback for iteration N is at `./ideation/reviews/iteration-N/metareview.md`. Read the Primary Concerns, Specific Suggestions, and Questions sections. Revise `./Proposal.md` to address these concerns, then write `./ideation/reviews/iteration-N/feedback.md` documenting what changes you made and which concerns each change addresses. After writing feedback.md, set state to `Phase: review-pending`."
-5. If iteration count = 10: force-proceed (see below)
+5. If N+1 > 10: force-proceed instead (see below)
 
 ### Force-Proceed (after 10 iterations)
 
-1. Update `./ideation/state.md`: `Phase: Done`
-2. Add caveat to metareview: "The review panel did not reach consensus after 10 rounds. Remaining concerns: [list]"
+1. Add caveat to metareview: "The review panel did not reach consensus after 10 rounds. Remaining concerns: [list]"
+2. Update `./ideation/state.md`: `Phase: generating-outputs` (NOT `Done` yet — same pattern as PASS)
 3. **Invoke the ideation skill** via the Skill tool with:
    > "The review panel has exhausted 10 revision rounds without consensus. Read `./Proposal.md` and generate the four final output files: `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, and `./reference.bib`. In Section 9, add a new subsection `### Review Panel Notes` immediately before the `### Decision Log` subsection, containing: 'NOTE: This proposal did not pass the review gate after 10 rounds. Remaining reviewer concerns: [list from metareview].' This subsection must be visually distinct from the auto-pilot decision log entries."
 4. **Validate outputs** (same check as PASS step 4). Retry up to 2 times if any file is missing.
+5. Update `./ideation/state.md`: `Phase: Done` — only after all output files are validated.
 
 ### Completion Criteria
 
@@ -343,7 +389,11 @@ Determine pass/fail, update state, and invoke the ideation skill for next action
 
 ## Reference Files
 
+These files are co-located with this skill. Try paths in order until one succeeds:
+- **Project install:** `.claude/skills/paperclaw-reviewing-AI/references/`
+- **Global install:** `~/.claude/skills/paperclaw-reviewing-AI/references/`
+
 Load on demand:
-- `references/conference-readiness.md` — scoring rubric with dimension definitions and Lean 4 adjustment rules
-- `references/review-protocol.md` — aggregation rules, Soundness adjustment table, feedback synthesis templates, standardized review output format
-- `references/domain.md` — venue-specific calibration and reviewer priorities
+- `<ref-dir>/conference-readiness.md` — scoring rubric with dimension definitions and Lean 4 penalty rules
+- `<ref-dir>/review-protocol.md` — aggregation rules, Soundness adjustment table, feedback synthesis templates, standardized review output format
+- `<ref-dir>/domain.md` — venue-specific calibration and reviewer priorities

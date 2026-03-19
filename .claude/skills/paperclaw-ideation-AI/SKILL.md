@@ -26,6 +26,29 @@ An auto-pilot, literature-driven pipeline that takes a raw research spark and re
 
 ---
 
+## Agent Architecture
+
+| Agent | Model | Role |
+|-------|-------|------|
+| `paperclaw-ideation-executor` | sonnet | Default workhorse — all web searches, literature collection, feasibility scouting, Lean 4 build execution, file management, HTML generation, Chinese translation, reference.bib |
+| `paperclaw-ideation-strategist` | opus | High-judgment only — exactly 5 tasks |
+
+### Strategist (opus) Triggers — exactly 5 tasks:
+
+| Phase.Step | Task |
+|-----------|------|
+| 0.2-0.3 | Synthesize field survey → Background Briefing → 5W1H auto-inference |
+| 2 + 2.5 decision | Gap analysis → propose 2-3 directions → auto-select best direction |
+| 4.1-4.5 | SMART RQ + theoretical analysis + Lean 4 proof writing + method design + experiment plan |
+| Handoff | Write complete Proposal.md draft (10 sections + appendices) |
+| Revision | Interpret metareview feedback, revise Proposal.md, write feedback.md |
+
+Everything else goes to the executor (sonnet).
+
+**Flow:** When this skill is triggered, invoke `paperclaw-ideation-executor` as the main agent. The executor runs the pipeline and spawns `paperclaw-ideation-strategist` at each trigger point above. The strategist completes its task and returns; the executor resumes.
+
+---
+
 ## Workflow Overview
 
 ```mermaid
@@ -43,7 +66,7 @@ flowchart TD
     LEAN -->|FAIL fundamental| ESCALATE[Escalate to\nearlier phase]
     ESCALATE -->|Theory flaw| P4
     ESCALATE -->|Direction flaw| P2
-    METHOD --> HANDOFF[Handoff: Generate draft Proposal.md\nInvoke paperclaw-reviewing-AI]
+    METHOD --> HANDOFF[Handoff: Generate draft Proposal.md\nInvoke paperclaw-ideation-reviewing-AI]
     HANDOFF --> REVIEW{Review Panel\n3-5 reviewers}
     REVIEW -->|FAIL| REVISE[Read metareview.md\nRevise Proposal\nWrite feedback.md]
     REVISE -->|max 10 rounds| REVIEW
@@ -61,7 +84,16 @@ When starting a new session, check if `./ideation/state.md` exists:
 1. **If exists** → Read state.md to determine current phase and iteration
 2. **Read papers.md** to know which papers have already been retrieved — do not re-search
 3. **Read questions.md** to load all prior auto-decisions
-4. **Resume** from the phase recorded in state.md
+4. **Resume** from the phase recorded in state.md, using these rules:
+
+   | Phase in state.md | Action |
+   |-------------------|--------|
+   | `0`–`4` | Resume from that phase |
+   | `review-pending` | Generate draft Proposal.md if missing, then invoke reviewing skill |
+   | `revision-N` | Read `./ideation/reviews/iteration-N/metareview.md` and proceed with revision |
+   | `generating-outputs` | The reviewing skill already approved; go directly to **Research Proposal Output** section to generate `Proposal_cn.md`, `Proposal.html`, `Proposal_cn.html`, `reference.bib`. Do NOT re-invoke the reviewing skill. |
+   | `Done` | All outputs complete; report status to user and exit |
+
 5. **If review-pending or revision-N** → also read `./ideation/reviews/` for review history
 
 If the user wants to restart a phase, they must explicitly say so.
@@ -95,7 +127,7 @@ All internal files live under `./ideation/`:
 | `literature.md` | Overwrite | Structured analysis notes from Phase 3 deep dive |
 | `theory.md` | Overwrite | Problem formalization and theoretical analysis from Phase 4 |
 | `questions.md` | Append-only | Auto-pilot decision log — source for Proposal Section 9 |
-| `reviews/` | Directory | Review panel records (managed by paperclaw-reviewing-AI) |
+| `reviews/` | Directory | Review panel records (managed by paperclaw-ideation-reviewing-AI) |
 | `lean4/` | Directory | Lean 4 formal verification project |
 
 Final outputs in project root (`./`):
@@ -512,7 +544,7 @@ theorem [theorem_name] : [formal_statement] := by
 export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH" && cd ./ideation/lean4 && lake build
 ```
 
-**Bash timeout:** 300000ms (5 minutes). First build with Mathlib can be slow.
+**Bash timeout:** 1800000ms (30 minutes). First-time Mathlib download can take 10–30 minutes; subsequent builds with a warm `.lake/` cache are fast (set timeout to 300000ms if `.lake/packages/` already exists).
 
 ##### 4.3.5 — Result Classification
 
@@ -604,7 +636,7 @@ After Phase 4 is complete, generate `./Proposal.md` (draft version) and hand off
 1. Write `./ideation/state.md` with `Phase: review-pending`
 2. Append to `./ideation/log.md`: "Phase 4 complete. Proposal draft generated. Handing off to review panel."
 3. Output: "Draft Proposal generated. Submitting to independent review panel."
-4. **MANDATORY: Invoke the `paperclaw-reviewing-AI` skill immediately.** Do NOT evaluate the proposal yourself. Do NOT score it on any dimensions. The reviewing skill reads `./ideation/state.md`, detects `Phase: review-pending`, and takes over.
+4. **MANDATORY: Invoke the `paperclaw-ideation-reviewing-AI` skill immediately.** Do NOT evaluate the proposal yourself. Do NOT score it on any dimensions. The reviewing skill reads `./ideation/state.md`, detects `Phase: review-pending`, and takes over.
 
 > **This step is non-negotiable.** The ideation pipeline is incomplete without review. If the reviewing skill is not invoked here, the proposal will never be scored or approved.
 
@@ -649,7 +681,7 @@ If the review panel signals revision via `./ideation/state.md` (`Phase: revision
 - [concern]: [why it could not be fully addressed and what was done instead]
 ```
 
-7. Set state to `Phase: review-pending` and invoke `paperclaw-reviewing-AI` again for the next review round.
+7. Set state to `Phase: review-pending` and invoke `paperclaw-ideation-reviewing-AI` again for the next review round.
 
 The review panel controls the iteration count and pass/fail decision — you simply respond to their feedback and resubmit.
 
@@ -1074,7 +1106,7 @@ Overwrite this file after every phase transition.
 # Ideation State
 
 **Idea:** [one-line summary]
-**Phase:** [0 / 1 / 2 / 2.5 / 3 / 4 / review-pending / revision-N / Done]
+**Phase:** [0 / 1 / 2 / 2.5 / 3 / 4 / review-pending / revision-N / generating-outputs / Done]
 **Iteration:** [N]
 **Direction:** [chosen direction title, or "TBD"]
 **Lean4Status:** [not_started / in_progress / pass / partial_pass / fail]
@@ -1228,12 +1260,16 @@ Append new decisions as they are made. Never overwrite existing entries. Source 
 
 ## Reference Files
 
+These files are co-located with this skill. Try paths in order until one succeeds:
+- **Project install:** `.claude/skills/paperclaw-ideation-AI/references/`
+- **Global install:** `~/.claude/skills/paperclaw-ideation-AI/references/`
+
 Load on demand:
-- `references/domain.md` — **domain configuration** (target venues, databases, resource estimates, domain examples). Replace this file to adapt the skill for a different research domain.
-- `references/proposal-template.md` — **Proposal.md structure skeleton** (10-section template with appendices). The authoritative structure for generated Proposals.
-- `references/proposal-html-template.html` — **HTML/CSS template** for Proposal.html / Proposal_cn.html (KaTeX math, Mermaid diagrams, collapsible proofs/Lean 4 code).
-- `references/iteration-loop.md` — detailed loop logic and loop-back decision tree
-- `references/gap-analysis-guide.md` — 5 gap types, analysis dimensions, examples
-- `references/5w1h-framework.md` — 5W1H framework for Phase 0
-- `references/literature-search-strategies.md` — keyword construction and database search tips
-- `references/research-question-formulation.md` — SMART criteria, question types, evaluation
+- `<ref-dir>/domain.md` — **domain configuration** (target venues, databases, resource estimates, domain examples). Replace this file to adapt the skill for a different research domain.
+- `<ref-dir>/proposal-template.md` — **Proposal.md structure skeleton** (10-section template with appendices). The authoritative structure for generated Proposals.
+- `<ref-dir>/proposal-html-template.html` — **HTML/CSS template** for Proposal.html / Proposal_cn.html (KaTeX math, Mermaid diagrams, collapsible proofs/Lean 4 code).
+- `<ref-dir>/iteration-loop.md` — detailed loop logic and loop-back decision tree
+- `<ref-dir>/gap-analysis-guide.md` — 5 gap types, analysis dimensions, examples
+- `<ref-dir>/5w1h-framework.md` — 5W1H framework for Phase 0
+- `<ref-dir>/literature-search-strategies.md` — keyword construction and database search tips
+- `<ref-dir>/research-question-formulation.md` — SMART criteria, question types, evaluation

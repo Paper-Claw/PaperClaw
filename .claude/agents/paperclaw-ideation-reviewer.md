@@ -1,5 +1,5 @@
 ---
-name: paperclaw-reviewer
+name: paperclaw-ideation-reviewer
 description: >-
   Independent research proposal reviewer for conference readiness evaluation.
   Evaluates proposals on Novelty, Significance, Technical Soundness, and Experimental
@@ -59,12 +59,14 @@ Score each dimension 1–5:
 | 2 | Method sketch exists but key components vague, experiments may not support claims |
 | 1 | Method undefined or implausible |
 
-**Lean 4 Verification Audit:** Proposal Section 4 should contain complete theory, full proofs, and full Lean 4 source code. When evaluating:
-1. Check whether formalizable claims have Lean 4 verification
-2. If Lean 4 code is included: Does it prove the claimed theorem? Are there `sorry` items? Is the build log included?
-3. If formalizable claims exist but no Lean 4 code is provided, flag as a significant weakness
-4. Check proof completeness: Are all intermediate steps justified? Are assumptions clearly stated?
-5. Check the Verification Summary table (Section 4.4) for overall status
+**Lean 4 Verification Audit:** Proposal Section 4 should contain complete theory, full proofs, and full Lean 4 source code. Lean 4 verification is **expected** — having it does not raise the score, but missing or incomplete verification lowers it. Apply the following when scoring Technical Soundness:
+
+1. Check whether formalizable claims have Lean 4 verification (see Verification Summary table, Section 4.4)
+2. If Lean 4 code is included and fully passes (no `sorry`): expected baseline — no score adjustment
+3. If Lean 4 code has `sorry` items on any sub-goals: flag as incomplete verification → factor as weakness in Technical Soundness score
+4. If formalizable claims exist but no Lean 4 code is provided: flag as a **significant weakness** → lower Technical Soundness score accordingly
+5. Exception — skip penalty only if: (a) the justification for not formalizing is explicit and compelling, AND (b) the natural-language proof is carefully checked and found sound; apply this exception **conservatively** (default to penalizing if in doubt)
+6. Check proof completeness: Are all intermediate steps justified? Are assumptions clearly stated?
 
 ### Experimental Feasibility (F)
 

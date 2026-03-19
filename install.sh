@@ -63,10 +63,17 @@ link_item() {
 # ── 3. Skills ────────────────────────────────────────────────────────────────
 mkdir -p "${DST_SKILLS}"
 if [[ -d "${SRC_SKILLS}" ]]; then
-    for item in "${SRC_SKILLS}"/*; do
-        name="$(basename "${item}")"
-        link_item "${item}" "${DST_SKILLS}/${name}"
-    done
+    shopt -s nullglob
+    items=("${SRC_SKILLS}"/paperclaw*)
+    shopt -u nullglob
+    if [[ ${#items[@]} -eq 0 ]]; then
+        warn "No paperclaw* skills found in ${SRC_SKILLS}"
+    else
+        for item in "${items[@]}"; do
+            name="$(basename "${item}")"
+            link_item "${item}" "${DST_SKILLS}/${name}"
+        done
+    fi
 else
     warn "No skills directory found at ${SRC_SKILLS}"
 fi
@@ -74,10 +81,17 @@ fi
 # ── 4. Agents ────────────────────────────────────────────────────────────────
 mkdir -p "${DST_AGENTS}"
 if [[ -d "${SRC_AGENTS}" ]]; then
-    for item in "${SRC_AGENTS}"/*; do
-        name="$(basename "${item}")"
-        link_item "${item}" "${DST_AGENTS}/${name}"
-    done
+    shopt -s nullglob
+    items=("${SRC_AGENTS}"/paperclaw*)
+    shopt -u nullglob
+    if [[ ${#items[@]} -eq 0 ]]; then
+        warn "No paperclaw* agents found in ${SRC_AGENTS}"
+    else
+        for item in "${items[@]}"; do
+            name="$(basename "${item}")"
+            link_item "${item}" "${DST_AGENTS}/${name}"
+        done
+    fi
 else
     warn "No agents directory found at ${SRC_AGENTS}"
 fi

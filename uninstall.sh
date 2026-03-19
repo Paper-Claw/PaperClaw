@@ -42,16 +42,20 @@ remove_if_ours() {
 
 # ── Skills ────────────────────────────────────────────────────────────────────
 if [[ -d "${DST_SKILLS}" ]]; then
-    for item in "${DST_SKILLS}"/*; do
+    shopt -s nullglob
+    for item in "${DST_SKILLS}"/paperclaw*; do
         [[ -e "${item}" || -L "${item}" ]] && remove_if_ours "${item}"
     done
+    shopt -u nullglob
 fi
 
 # ── Agents ────────────────────────────────────────────────────────────────────
 if [[ -d "${DST_AGENTS}" ]]; then
-    for item in "${DST_AGENTS}"/*; do
+    shopt -s nullglob
+    for item in "${DST_AGENTS}"/paperclaw*; do
         [[ -e "${item}" || -L "${item}" ]] && remove_if_ours "${item}"
     done
+    shopt -u nullglob
 fi
 
 log "Done. Removed ${removed} symlink(s)."

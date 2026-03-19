@@ -94,17 +94,17 @@ Is the method well-defined and are the claims defensible?
 - Comparison against weak or unfair baselines
 - No way to measure the property that was claimed to improve
 
-**Lean 4 Formal Verification Bonus/Penalty:**
+**Lean 4 Formal Verification Penalty:**
 
-Lean 4 verification results adjust the Technical Soundness score. See `references/review-protocol.md` "Soundness Score Adjustment" table for the authoritative 6-category rules. Summary:
+Lean 4 verification is expected for all theoretical claims. Having it does **not** add bonus points; missing or incomplete verification incurs a penalty. See `references/review-protocol.md` "Soundness Score Adjustment" table for the authoritative rules. Summary:
 
 | Status | Adjustment |
 |--------|------------|
-| FULL PASS (no `sorry`) | +1 (cap at 5) |
-| PARTIAL PASS (`sorry` on empirical sub-goals only) | No change |
+| FULL PASS (no `sorry`) | No change (verification is expected, not a bonus) |
+| PARTIAL PASS (`sorry` on any sub-goals) | -1 (floor at 1) |
 | FAIL (attempted, failed after retries) | -1 (floor at 1) |
-| SKIPPED — unjustified (formalizable claims exist, no verification) | -1 (floor at 1) |
-| SKIPPED — justified (no formalizable claims in theory.md) | No change |
+| SKIPPED — justified + rigorous NL proof (apply conservatively) | No change — **only** when: (a) a careful NL proof audit confirms the proof is sound, AND (b) the justification for skipping formalization is explicit and compelling |
+| SKIPPED — unjustified, or NL proof insufficient | -1 (floor at 1) |
 | ESCALATION (`Lean4Escalation: true` in state.md) | Cap at 2 |
 
 ---

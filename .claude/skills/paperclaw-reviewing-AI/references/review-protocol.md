@@ -35,16 +35,18 @@ The orchestrator independently audits Lean 4 verification status. This is separa
 
 ### Soundness Score Adjustment
 
+Lean 4 verification is **expected** for all theoretical work — having it does not add bonus points. Missing or incomplete verification incurs a penalty. The "justified skip" exception requires **both** a compelling, explicit justification for not formalizing AND a careful natural-language proof audit that confirms soundness; apply this exception conservatively.
+
 | Status | Condition | Adjustment |
 |--------|-----------|------------|
-| **FULL PASS** | `lake build` succeeds, no `sorry` | +1 to median Soundness (cap at 5) |
-| **PARTIAL PASS** | `sorry` only on empirical sub-goals | No change |
+| **FULL PASS** | `lake build` succeeds, no `sorry` | No change (verification is expected, not a bonus) |
+| **PARTIAL PASS** | `sorry` on any sub-goals (empirical or otherwise) | -1 to median Soundness (floor at 1) |
 | **FAIL** | Verification attempted, failed after retries | -1 to median Soundness (floor at 1) |
-| **SKIPPED (unjustified)** | Formalizable claims exist but no verification attempted | -1 to median Soundness (floor at 1) |
-| **SKIPPED (justified)** | No formalizable claims exist (purely empirical work) | No change |
+| **SKIPPED (justified + rigorous NL proof)** | No formalizable claims exist OR skip is explicitly justified AND NL proof is carefully audited and sound | No change — apply conservatively; default to -1 if in doubt |
+| **SKIPPED (unjustified or NL proof insufficient)** | Formalizable claims exist but no verification; or justification is weak; or NL proof has gaps | -1 to median Soundness (floor at 1) |
 | **ESCALATION** | Ideation pipeline flagged `Lean4Escalation: true` | Cap median Soundness at 2 |
 
-> **Note:** These 6 categories are the authoritative Lean 4 adjustment rules. Both `conference-readiness.md` and the reviewing SKILL.md reference this table.
+> **Note:** These categories are the authoritative Lean 4 adjustment rules. Both `conference-readiness.md` and the reviewing SKILL.md reference this table.
 
 ---
 
