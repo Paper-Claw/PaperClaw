@@ -144,13 +144,21 @@ updated: <timestamp>
 - **Total Experiments**: <N> (baselines: <N>, ablations: <N>, claim-proofs: <N>, analysis: <N>)
 - **Completed**: <N>
 - **Remaining**: <N>
-- **Current Job**: <description>
-- **Job Started**: <timestamp>
 - **Estimated Time Per Job**: <minutes>
 - **Estimated Remaining Time**: <H hours M minutes>
+
+## Active Jobs
+
+| Session ID | Experiment | GPU(s) | Est. RAM | Started | Status |
+|------------|-----------|--------|----------|---------|--------|
+| paperclaw-train-baseline-X | Baseline X on Dataset A | 0 | 12G | <timestamp> | running |
+| paperclaw-train-baseline-Y | Baseline Y on Dataset B | 1 | 8G | <timestamp> | running |
+
+- **Max Concurrent GPU Jobs**: <N> (from server.md)
+- **Max Concurrent CPU Jobs**: <N> (from server.md)
 ```
 
-**Update state.md** at: phase start, step start/end, blockers, user input requests, job start/finish.
+**Update state.md** at: phase start, step start/end, blockers, user input requests, job start/finish, concurrent job launch/completion.
 
 ### Progress Tracking & ETA
 
@@ -270,10 +278,16 @@ If connection fails: report error, ask for corrected credentials, retry (max 3 a
 #### Step 0.3: Probe Hardware
 
 ```bash
-ssh <server> "nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
-  lscpu | grep -E 'Model name|Core|Thread'; free -h | head -2; df -h <workdir>; \
+ssh <server> "nvidia-smi --query-gpu=index,name,memory.total,memory.used,driver_version --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
+  lscpu | grep -E 'Model name|^CPU\(s\)|Core|Thread'; nproc; free -h | head -2; free -m | grep Mem; df -h <workdir>; \
   python3 --version 2>/dev/null; nvcc --version 2>/dev/null; head -4 /etc/os-release"
 ```
+
+Record in server.md the **resource capacity** for scheduling (see Appendix F):
+- Number of GPUs and per-GPU memory (MiB)
+- Total CPU cores (physical) and threads
+- Total RAM (MiB)
+- Available disk space
 
 #### Step 0.4: Check Working Directory
 
@@ -287,8 +301,9 @@ If not empty, ask the user: proceed (preserve existing files) or choose a differ
 
 Write `./experiment/server.md` with sections:
 - **Connection**: host, port, user, workdir
-- **Hardware**: GPU table, CPU, memory, storage
+- **Hardware**: GPU table (index, name, memory each), CPU (cores, threads), total RAM, storage
 - **Software Environment**: OS, Python, CUDA, driver version
+- **Scheduling Capacity** (see Appendix F): per-GPU total memory, max concurrent CPU jobs, RAM thresholds, measured job memory footprints
 
 #### Step 0.6: Probe Local Hardware
 
@@ -447,9 +462,19 @@ For each baseline:
 
 Git commit after each baseline code setup.
 
-#### Step 2.3: Run Baselines
+#### Step 2.3: Run Baselines (Resource-Aware Parallel)
 
-Use the project's unified training and evaluation entry points with each baseline's config file. Run training/evaluation.
+Use the project's unified training and evaluation entry points with each baseline's config file.
+
+**Parallel scheduling** (see Appendix F for full rules):
+1. Before launching a new job, run the **resource check** commands (Appendix F.2) to get current CPU%, RAM%, and per-GPU memory usage.
+2. Consult the scheduling capacity in server.md to determine how many concurrent jobs are allowed.
+3. If resources permit, launch **independent baselines in parallel** — e.g., different baselines on different GPUs, or CPU-light evaluation alongside GPU training. Each gets its own tmux session (`paperclaw-train-baseline-<method>`).
+4. If launching would exceed any threshold (RAM > 85%, GPU memory > 90%, CPU > 90%), **wait** for a running job to finish before launching the next one.
+5. Monitor all active sessions; when one finishes, check resources again and launch the next queued experiment.
+6. Update the **Active Jobs** table in state.md whenever a job starts or finishes.
+
+> **Important**: Jobs that share the same GPU or write to the same files are NOT independent — run them sequentially. Only parallelize truly independent experiments (different methods, different datasets, different GPUs).
 
 #### Step 2.4: Compare Results
 
@@ -545,24 +570,28 @@ Git commit after each significant improvement: `feat(method): improve <component
 
 Append to `./experiment/ours.md` using the **Iteration Log Entry** template (see Working Files section).
 
-#### Step 3.5: Ablation Studies
+#### Step 3.5: Ablation Studies (Resource-Aware Parallel)
 
 Once our method beats all baselines:
 1. **Component ablation** — Remove each key component one at a time
 2. **Hyperparameter sensitivity** — Vary key hyperparameters
 3. **Module replacement** — Replace our components with alternatives
 
+**Parallel scheduling**: Ablation variants are independent — launch multiple in parallel following the resource-aware rules (Appendix F). Each variant gets its own tmux session (`paperclaw-ablation-<variant>`). Check resources before each launch; wait if thresholds are exceeded.
+
 Record results in ours.md and results.md. Git commit: `feat(ablation): complete component ablation study`
 
-#### Step 3.6: Multi-Seed Runs
+#### Step 3.6: Multi-Seed Runs (Resource-Aware Parallel)
 
 Run final config with 3–5 seeds (42, 123, 456, 789, 1024). Report **mean ± std** in results.md.
 
+**Parallel scheduling**: Different seeds are independent — launch multiple seed runs in parallel on separate GPUs or when resources permit. Each gets its own tmux session (`paperclaw-seed-<seed>`). Follow Appendix F resource checks.
+
 Git commit: `feat(method): complete multi-seed runs (mean±std reported)`
 
-#### Step 3.7: Claim-Proof Experiments
+#### Step 3.7: Claim-Proof Experiments (Resource-Aware Parallel)
 
-Run all claim-proof experiments from the Claim-Proof table in plan.md:
+Run all claim-proof experiments from the Claim-Proof table in plan.md. Independent claim-proof experiments can run in parallel following Appendix F.
 1. Implement measurement/comparison code
 2. Run experiment
 3. Check if result supports the claim
@@ -796,6 +825,7 @@ Timeout handling: use `tmux` for all long-running jobs (training, evaluation, da
 | Training crash | Check `tail -100 train.log`. Common fixes: reduce batch size, check data path, verify GPU. Resume from latest checkpoint. |
 | Out of disk | `df -h && du -sh <workdir>/*`. Clean old checkpoints, cached data. Ask user if still insufficient. |
 | Out of GPU memory | Reduce batch size → gradient accumulation → mixed precision (fp16/bf16) → gradient checkpointing. |
+| Machine unresponsive (OOM kill / CPU saturated) | SSH will likely timeout. Wait 2 min, retry. If reachable: check `dmesg | tail -30` for OOM kills, `tmux list-sessions` for surviving jobs. Reduce max concurrent jobs in server.md by 1. Restart killed jobs from checkpoint. If unreachable after 3 retries: ask user to hard-reboot, then resume per Resume Protocol. |
 
 ### E. Tool Reference
 
@@ -808,6 +838,108 @@ Timeout handling: use `tmux` for all long-running jobs (training, evaluation, da
 | `WebSearch` / `WebFetch` | Paper search, repo discovery, dataset sources |
 | `TodoWrite` | Phase/step progress tracking |
 | `Agent` | Dispatch strategist/executor sub-agents |
+
+### F. Resource-Aware Parallel Scheduling
+
+The experiment server has finite resources. Blindly launching all jobs at once can cause OOM kills, CPU saturation, or the machine becoming unresponsive. This appendix defines how to safely parallelize experiments.
+
+#### F.1: Scheduling Capacity (determined in Phase 0)
+
+After hardware probing, compute and record in server.md:
+
+```markdown
+## Scheduling Capacity
+
+- **GPUs**: <N> × <name> (<M> MiB each)
+- **Max Concurrent CPU-Only Jobs**: <floor(total_threads / 4)> (cap at 4)
+- **RAM Headroom**: reserve 15% of total RAM for OS + SSH + monitoring
+
+### Thresholds (do NOT launch new jobs if exceeded)
+- RAM usage > 85% of total
+- GPU: free memory on target GPU < estimated peak memory of the new job
+- CPU usage > 90% sustained (1-min avg)
+- Disk usage > 90%
+```
+
+**Capacity rules:**
+- **Same GPU, multiple jobs**: Allowed as long as the GPU has enough **free memory** to fit the new job. No fixed headroom — use all available memory, just don't exceed total. Example: a 24 GiB GPU running a 10 GiB job has ~14 GiB free; a second job needing 8 GiB can launch on the same GPU.
+- **Multi-GPU (N GPUs)**: Prefer spreading jobs across GPUs first. Only stack on the same GPU when all GPUs are partially occupied and free memory permits.
+- **CPU-only jobs**: can run alongside GPU jobs as long as RAM and CPU thresholds are respected.
+- **Estimating GPU memory**: If a job's GPU memory footprint is unknown, run it once solo and record peak usage via `nvidia-smi`. Use that measurement for subsequent scheduling. Before the first measurement, assume **70% of one GPU's total memory** as a conservative estimate.
+
+#### F.2: Resource Check Commands
+
+Run these **before launching any new job**:
+
+```bash
+# Combined resource snapshot (single SSH call)
+ssh <server> "echo '=== GPU ==='; nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
+  echo '=== RAM ==='; free -m | grep Mem; \
+  echo '=== CPU ==='; top -bn1 | grep 'Cpu(s)' | awk '{print \"CPU used: \" 100-\$8 \"%\"}'; \
+  echo '=== DISK ==='; df -h <workdir> | tail -1; \
+  echo '=== ACTIVE JOBS ==='; tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'None'"
+```
+
+Parse the output and compare against thresholds. If **any** threshold is exceeded, **do not launch** — wait for a running job to finish, then re-check.
+
+#### F.3: Launch Protocol
+
+Before starting a new experiment:
+
+1. **Check active jobs**: `tmux list-sessions | grep '^paperclaw-'` — count running jobs.
+2. **Check resources**: Run F.2 resource snapshot.
+3. **Evaluate**:
+   - **GPU job**: Check each GPU's free memory (`memory.total - memory.used`). If any GPU has free memory ≥ the new job's estimated peak GPU memory → OK to launch on that GPU (prefer the GPU with the most free memory).
+   - **CPU-only job**: If RAM < 85% AND CPU < 90% → OK to launch.
+   - Otherwise → **wait**. Poll every 60 seconds until a slot opens (a running job finishes and frees resources).
+4. **Pin GPU**: For GPU jobs, always set `CUDA_VISIBLE_DEVICES=<gpu_index>` in the tmux command:
+   ```bash
+   ssh <server> "tmux new-session -d -s paperclaw-<id> 'cd <workdir> && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=<gpu_index> python train.py --config <config> 2>&1 | tee <logfile>; tmux wait-for -S paperclaw-<id>-done'"
+   ```
+5. **Update state.md**: Add the new job to the Active Jobs table.
+6. **Log**: Record the launch in log.md with the resource snapshot at launch time.
+
+#### F.4: Monitoring Active Jobs
+
+When multiple jobs are running concurrently:
+
+```bash
+# Check which sessions are still alive
+ssh <server> "tmux list-sessions 2>/dev/null | grep '^paperclaw-'"
+
+# Check a specific job's latest output
+ssh <server> "tmux capture-pane -t paperclaw-<id> -p | tail -20"
+
+# Quick health check: are resources still within thresholds?
+ssh <server> "free -m | grep Mem; nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader 2>/dev/null"
+```
+
+When a job finishes:
+1. Remove it from the Active Jobs table in state.md.
+2. Check resources again (F.2).
+3. Launch next queued experiment if resources permit.
+
+#### F.5: What Can Run in Parallel
+
+| Scenario | Parallel? | Notes |
+|----------|-----------|-------|
+| Different baselines on different GPUs | Yes | Pin each to its own GPU |
+| Different baselines on same GPU | Yes, if memory fits | Sum of peak GPU memory of all jobs on that GPU must < GPU total memory |
+| Different seeds of same method on different GPUs | Yes | Pin each to its own GPU |
+| Different seeds on same GPU | Yes, if memory fits | Same rule: sum of peak memory < total |
+| Ablation variants on same/different GPUs | Yes, if memory fits | Prefer spreading across GPUs first |
+| CPU evaluation while GPU is training | Yes | As long as RAM permits |
+| Dataset download while GPU is training | Yes | I/O bound, minimal CPU/RAM |
+| Two training jobs on a single-GPU machine | Yes, if memory fits | Check free memory ≥ new job's peak; if not, wait |
+| Our method iteration while a baseline is still running | Yes, if memory fits | OK on same GPU if free memory sufficient; prefer different GPU |
+
+#### F.6: Adaptive Capacity Adjustment
+
+If a job triggers an OOM kill or the machine becomes unresponsive:
+1. After recovery, reduce `Max Concurrent GPU Jobs` by 1 in server.md.
+2. Log the incident in log.md with the resource state at the time.
+3. For subsequent jobs, also reduce batch size or enable gradient checkpointing.
+4. If max concurrent drops to 0 (i.e., even a single job OOMs), this is a single-job OOM issue — handle per Appendix D (reduce batch size, mixed precision, etc.).
 
 ---
 
@@ -826,6 +958,7 @@ Timeout handling: use `tmux` for all long-running jobs (training, evaluation, da
 11. **Never store secrets** — Sudo password in session memory only
 12. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
 13. **Download results locally** — Keep `experiment/figures/` synced for reports
+14. **Respect machine limits** — Always check resources before launching jobs; never saturate the server (see Appendix F)
 
 ---
 
