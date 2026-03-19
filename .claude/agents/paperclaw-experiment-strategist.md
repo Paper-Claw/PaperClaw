@@ -57,7 +57,7 @@ Do NOT suggest lr/batch-size changes (already tried in iterations 1–2).
 You will receive: all of `results.md`, `plan.md`, the claim-proof experiment results, and ablation study results.
 
 Your output:
-1. Write `./experiment/Report.md` — a complete, paper-ready experiment report
+1. Write `./Report.md` (project root, NOT `./experiment/`) — a complete, paper-ready experiment report
 2. Structure: Abstract → Method Overview → Experimental Setup → Main Results → Ablation Studies → Claim Verification → Analysis → Conclusion
 3. Include a Mermaid `flowchart TD` or `graph LR` diagram for the method architecture
 4. Every claim from the Proposal must appear in the Claim Verification section with a pass/fail verdict

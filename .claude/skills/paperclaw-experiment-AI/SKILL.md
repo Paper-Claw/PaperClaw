@@ -51,7 +51,7 @@ flowchart TD
     P3loop -->|"No, iter ≥ 3: strategist"| P3diag["Diagnose & fix"]
     P3diag --> P3
     P3loop -->|"No, iter > 10"| User2["Escalate to user"]
-    P3loop -->|Yes| P3b["3.5–3.7: Ablation + Claim-proof + Analysis"]
+    P3loop -->|Yes| P3b["3.5–3.9: Ablation + Multi-seed + Claim-proof + Analysis"]
     P3b --> P4
 
     P4 -->|"4.1: executor"| P4a["Completeness check"]
@@ -100,6 +100,12 @@ When starting a new session, check if `./experiment/state.md` exists:
 1. **If exists** → Read state.md to determine current phase/step
 2. **Read log.md** for recent events and context
 3. **Check remote server** via SSH: reachable? running processes? latest checkpoint?
+   - If SSH **unreachable**: do NOT escalate immediately. Retry once after 30 seconds.
+   - If still unreachable: ask user via `AskUserQuestion` with three options:
+     1. **Wait** — user will restore server access; resume after confirmation
+     2. **Local-only mode** — skip all remote operations; continue with local files (plan.md, results.md, report generation only)
+     3. **Abort** — save state and exit cleanly
+   - Record the decision in log.md and proceed accordingly.
 4. **Resume** from the last incomplete step recorded in state.md
 5. **If Phase 2/3** → also read comparison.md / ours.md for iteration history
 
@@ -237,10 +243,9 @@ Establish a reliable connection to the experiment server and record its capabili
 Prompt the user with `AskUserQuestion`:
 1. SSH host (e.g., `user@hostname` or IP)
 2. SSH port (default 22)
-3. Sudo password (if needed for package installation)
-4. Working directory on the server (e.g., `/home/user/experiments`)
+3. Working directory on the server (e.g., `/home/user/experiments`)
 
-**Security**: Never store sudo password in any file — session memory only. Redact credentials in all logs with `<REDACTED>`.
+> **Sudo password**: Do NOT ask upfront. Most experiment workflows do not need sudo. If a command fails because sudo is required, ask the user for the password at that specific point only, then proceed. Never store sudo password in any file — session memory only. Redact credentials in all logs with `<REDACTED>`.
 
 #### Step 0.2: Test SSH Connection
 
@@ -507,10 +512,10 @@ flowchart TD
     C --> D["Implement & test"]
     D --> E["Log in ours.md"]
     E --> F{"Beats all?"}
-    F -->|"No, iter 1–2: executor"| B
+    F -->|"No, iter 1–2: executor debug"| B
     F -->|"No, iter ≥ 3: strategist"| G["Deep diagnosis"]
     G --> D
-    F -->|"No, iter > 10"| H["Escalate to user"]
+    F -->|"No, iter > 10\n(total, counted from iter 1)"| H["Escalate to user"]
     F -->|Yes| I["Proceed to 3.5"]
 ```
 
@@ -531,31 +536,35 @@ Once our method beats all baselines:
 
 Record results in ours.md and results.md. Git commit: `feat(ablation): complete component ablation study`
 
-#### Step 3.5b: Multi-Seed Runs
+#### Step 3.6: Multi-Seed Runs
 
 Run final config with 3–5 seeds (42, 123, 456, 789, 1024). Report **mean ± std** in results.md.
 
 Git commit: `feat(ours): complete multi-seed runs (mean±std reported)`
 
-#### Step 3.5c: Claim-Proof Experiments
+#### Step 3.7: Claim-Proof Experiments
 
 Run all claim-proof experiments from the Claim-Proof table in plan.md:
 1. Implement measurement/comparison code
 2. Run experiment
 3. Check if result supports the claim
-4. **If result contradicts a claim** → log prominently, escalate to user immediately
+4. **If result contradicts a claim** → do NOT stop or escalate immediately. Instead:
+   - Add a `⚠️ CLAIM CONTRADICTION` entry to ours.md and log.md with full details
+   - Add a "Contradictions" section to results.md listing all contradicted claims
+   - Continue running remaining experiments
+   - Contradictions will be surfaced to the user during the Phase 4 completeness check
 
 Record in ours.md with verdict (Supported / Partially Supported / Contradicted). Update results.md "Claim Verification" section.
 
 Git commit per claim: `feat(claim-proof): verify claim "<claim_summary>"`
 
-#### Step 3.6: Analysis Experiments
+#### Step 3.8: Analysis Experiments
 
 Conduct analysis from plan.md: efficiency, visualization (t-SNE, attention maps), case studies, scalability. Download figures via scp to `./experiment/figures/`.
 
 Git commit: `feat(analysis): complete <analysis_type> experiments`
 
-#### Step 3.7: Update results.md
+#### Step 3.9: Update results.md
 
 Fill in all remaining rows: ours main results, ablation tables, analysis tables, figure references.
 
@@ -563,11 +572,12 @@ Git commit locally: `docs(results): update results for all experiments`
 
 ### Completion Criteria
 
-- [x] Our method beats all baselines on all main metrics
-- [x] All ablation studies done
-- [x] All claim-proof experiments done (check for contradictions)
-- [x] All analysis experiments done
-- [x] results.md fully populated
+- [x] Our method beats all baselines on all main metrics (Step 3.3)
+- [x] All ablation studies done (Step 3.5)
+- [x] Multi-seed runs complete, mean±std reported (Step 3.6)
+- [x] All claim-proof experiments done; contradictions logged in results.md (Step 3.7)
+- [x] All analysis experiments done (Step 3.8)
+- [x] results.md fully populated (Step 3.9)
 - [x] ours.md has complete iteration history
 
 ---
@@ -592,9 +602,14 @@ Verify plan.md against results.md:
 
 If incomplete → go back to the relevant phase.
 
+**Claim Contradiction Check**: Read the "Contradictions" section of results.md (populated in Step 3.7).
+- If one or more claims are contradicted → surface all contradictions to the user via `AskUserQuestion` **before** generating the report:
+  > "The following claims from Proposal.md were contradicted by experiments: [list]. How would you like to proceed? (a) Revise the Proposal claims and continue to report generation; (b) Re-run specific experiments; (c) Proceed to report generation as-is (contradictions will be documented)."
+- Record the user's decision in log.md, then proceed accordingly.
+
 #### Step 4.2: Generate Report.md *(strategist)*
 
-Write a comprehensive English report following `references/report-template.md`. Required sections:
+Write a comprehensive English report to **`./Report.md`** (project root, NOT `./experiment/`) following `references/report-template.md`. Required sections:
 
 1. **Method Design** — Overview, architecture (with Mermaid diagram), key components, training pipeline, implementation details
 2. **Datasets** — Per-dataset: task, size, source, citation, preprocessing
@@ -646,12 +661,14 @@ git commit -m "feat(experiment): complete experiment pipeline — all phases don
 This skill operates autonomously by default. Decisions are logged to `./experiment/log.md`.
 
 **ALWAYS ask** (never auto-decide):
-1. Server credentials and connection setup
-2. Baseline reproduction fails after 5 iterations
-3. Our method cannot beat a baseline after 10 iterations
-4. Non-empty working directory found on server
-5. Dataset requires registration/login to download
-6. Plan.md ready for review before execution
+1. Server credentials and connection setup (Phase 0.1)
+2. SSH unreachable during resume (offer: wait / local-only / abort)
+3. Baseline reproduction fails after 5 iterations
+4. Our method cannot beat a baseline after 10 total iterations
+5. Non-empty working directory found on server
+6. Dataset requires registration/login to download
+7. Plan.md ready for review before execution
+8. Sudo is required for a specific command (ask at that moment only; do NOT ask upfront)
 
 **Auto-decide and log**:
 1. Hyperparameter adjustments during reproduction
@@ -770,7 +787,12 @@ Timeout handling: use `nohup` for training, `ConnectTimeout=30` for short comman
 
 ## Reference Files
 
-- `references/domain.md` — Target venue standards and experiment expectations
-- `references/reproduction-guide.md` — Common reproduction pitfalls and solutions
-- `references/report-template.md` — Report.md section structure and writing guide
-- `references/report-html-template.html` — HTML/CSS template for Report.html and Report_cn.html
+These files are co-located with this skill. Try paths in order until one succeeds:
+- **Project install:** `.claude/skills/paperclaw-experiment-AI/references/`
+- **Global install:** `~/.claude/skills/paperclaw-experiment-AI/references/`
+
+Load on demand:
+- `<ref-dir>/domain.md` — target venue standards, experiment expectations, and resource estimates
+- `<ref-dir>/reproduction-guide.md` — common reproduction pitfalls, tolerance table, and when-to-give-up criteria
+- `<ref-dir>/report-template.md` — Report.md section structure and writing guide (7 required sections)
+- `<ref-dir>/report-html-template.html` — HTML/CSS template for Report.html and Report_cn.html
