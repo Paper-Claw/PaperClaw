@@ -26,24 +26,88 @@ Automate the complete experiment lifecycle: from remote server setup, through ba
 
 ## Workflow Overview
 
+```mermaid
+flowchart TD
+    P0["Phase 0: Server Setup & Hardware Probe"]
+    P1["Phase 1: Read Proposal → Experiment Plan"]
+    P2["Phase 2: Baseline Reproduction"]
+    P3["Phase 3: Our Method Implementation"]
+    P4["Phase 4: Completeness Check → Report Generation"]
+
+    P0 --> P1
+    P1 -->|"1.1–1.3: executor (sonnet)"| P1a["Research baselines & datasets"]
+    P1a -->|"1.4: strategist (opus)"| P1b["Design experiment matrix"]
+    P1b -->|"1.5–1.7: executor (sonnet)"| P1c["Write plan.md & results.md"]
+    P1c --> P2
+
+    P2 -->|"iterative: executor (sonnet)"| P2loop{"Results match\nreported numbers?"}
+    P2loop -->|No, iter ≤ 5| P2
+    P2loop -->|No, iter > 5| User1["Escalate to user"]
+    P2loop -->|Yes| P3
+
+    P3 -->|"3.1: strategist (opus)"| P3a["Implement core architecture"]
+    P3a -->|"3.2–3.3: executor (sonnet)"| P3loop{"Beats all\nbaselines?"}
+    P3loop -->|"No, iter 1–2: executor"| P3
+    P3loop -->|"No, iter ≥ 3: strategist (opus)"| P3diag["Diagnose & fix"]
+    P3diag --> P3
+    P3loop -->|"No, iter > 10"| User2["Escalate to user"]
+    P3loop -->|Yes| P3b["3.5–3.7: Ablation + Claim-proof + Analysis"]
+    P3b --> P4
+
+    P4 -->|"4.1: executor"| P4a["Completeness check"]
+    P4a -->|"4.2: strategist (opus)"| P4b["Generate Report.md"]
+    P4b -->|"4.3–4.6: executor"| P4c["HTML + Chinese + Git commit"]
+
+    style P1b fill:#f9e2af
+    style P3a fill:#f9e2af
+    style P3diag fill:#f9e2af
+    style P4b fill:#f9e2af
 ```
-Phase 0  Server Setup & Hardware Probe
-  │
-  ▼
-Phase 1  Read Proposal → Detailed Experiment Plan
-  │
-  ▼
-Phase 2  Baseline Reproduction (iterative until numbers match)
-  │
-  ▼
-Phase 3  Our Method Implementation (iterative until beating baselines)
-  │
-  ▼
-Phase 4  Completeness Check → Report Generation
-```
+
+> Yellow nodes = strategist (opus). All other nodes = executor (sonnet).
 
 All phases run on the **local machine** (where Claude Code is running).
 Compute-heavy training/evaluation is executed on the **experiment server** via SSH.
+
+---
+
+## Model Selection Strategy
+
+This skill uses two dedicated agents with model assignments baked in. The entry model of the current session does not matter — routing is always determined by the agent definition.
+
+| Agent | Model | Role |
+|-------|-------|------|
+| `paperclaw-experiment-executor` | `sonnet` | Default workhorse: all execution, SSH, research, debugging, logging, git, translation, HTML |
+| `paperclaw-experiment-strategist` | `opus` | High-judgment only: 4 specific tasks requiring original reasoning |
+
+### When to invoke the Strategist (Opus)
+
+| Trigger | Task |
+|---------|------|
+| Phase 1, Step 1.4 | Design full experiment matrix + Claim-Proof Experiments table |
+| Phase 3, Step 3.1 | Implement core method architecture from Proposal.md |
+| Phase 3, Step 3.3, **iteration ≥ 3 only** | Diagnose structural performance gap and form fix hypothesis |
+| Phase 4, Step 4.2 | Generate Report.md (full synthesis of all results) |
+
+Everything else — including Phase 0, Phase 2, baseline research, ablation execution, claim-proof runs, and report formatting — is handled by the Executor.
+
+### Invocation Pattern
+
+```python
+# Routine execution (default)
+Agent(
+  subagent_type="paperclaw-experiment-executor",
+  prompt="<task description + full context>"
+)
+
+# High-judgment tasks (4 triggers only)
+Agent(
+  subagent_type="paperclaw-experiment-strategist",
+  prompt="<full context: Proposal.md, plan.md, relevant results>"
+)
+```
+
+After the strategist returns, resume by invoking the executor for the next step.
 
 ---
 
@@ -162,15 +226,20 @@ All internal files live under `./experiment/`:
 | `log.md` | Append-only | Timestamped event log across all phases |
 | `figures/` | Directory | Visualization outputs downloaded from server (PNG, 300dpi) |
 
-Final outputs in project root:
+Final outputs in project root (`./`):
 
 | File | Format | Audience |
 |------|--------|----------|
-| `results.md` | Markdown | Running experiment result tables (updated throughout) |
 | `Report.md` | Markdown | Detailed English report for paper writing |
 | `Report_cn.md` | Markdown | Chinese translation of Report.md for paper writing |
 | `Report.html` | HTML | Polished English report for user review |
 | `Report_cn.html` | HTML | Polished Chinese report for user review |
+
+Working data in `./experiment/`:
+
+| File | Format | Purpose |
+|------|--------|---------|
+| `results.md` | Markdown | Running experiment result tables (updated throughout) |
 
 ---
 
@@ -420,7 +489,7 @@ Each claim must map to at least one dedicated experiment:
 
 #### Step 1.5: Write plan.md
 
-Write `./experiment/plan.md` containing all the above tables plus:
+Merge all research from Steps 1.1–1.3 with the strategist's experiment matrix from Step 1.4 into `./experiment/plan.md`. Include:
 - Estimated compute budget (GPU hours)
 - Execution order and dependencies
 - Risk assessment (what might fail and fallback plans)
@@ -463,7 +532,7 @@ ssh <server> "cd <workdir> && git add .gitignore && git commit -m 'chore: initia
 
 #### Step 1.7: Create results.md
 
-Initialize `./results.md` with empty experiment tables (headers only, values TBD):
+Initialize `./experiment/results.md` with empty experiment tables (headers only, values TBD):
 
 ```markdown
 # Experiment Results
@@ -578,17 +647,16 @@ Compare reproduced results against reported numbers from plan.md.
 
 **If results DO NOT match**:
 
-```
-┌─────────────────────────────────────┐
-│  REPRODUCTION MISMATCH DETECTED     │
-│                                     │
-│  1. Log the discrepancy             │
-│  2. Diagnose root cause             │
-│  3. Apply fix                       │
-│  4. Re-run                          │
-│  5. If still failing after 5 tries, │
-│     ask user for guidance           │
-└─────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["Reproduction mismatch detected"] --> B["Log discrepancy in comparison.md"]
+    B --> C["Diagnose root cause"]
+    C --> D["Apply fix"]
+    D --> E["Re-run experiment"]
+    E --> F{"Results match?"}
+    F -->|Yes| G["Mark baseline as reproduced"]
+    F -->|"No, iter ≤ 5"| C
+    F -->|"No, iter > 5"| H["Ask user for guidance"]
 ```
 
 Common fixes to try:
@@ -632,7 +700,7 @@ Append to `./experiment/comparison.md`:
 
 #### Step 2.6: Update results.md
 
-After each successful reproduction, update the "reproduced" rows in `./results.md`.
+After each successful reproduction, update the "reproduced" rows in `./experiment/results.md`.
 
 #### Step 2.7: Git Commit Milestones
 
@@ -717,18 +785,18 @@ Debug common issues:
 
 For each dataset where our method underperforms:
 
-```
-┌────────────────────────────────────────┐
-│  PERFORMANCE GAP DETECTED              │
-│                                        │
-│  1. Analyze where the gap comes from   │
-│  2. Hypothesize improvements           │
-│  3. Implement and test                 │
-│  4. Log the iteration                  │
-│  5. Repeat until beating baselines     │
-│  6. After 10 iterations without        │
-│     progress, escalate to user         │
-└────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    A["Performance gap detected"] --> B["Analyze gap source"]
+    B --> C["Hypothesize improvement"]
+    C --> D["Implement and test"]
+    D --> E["Log iteration in ours.md"]
+    E --> F{"Beats all\nbaselines?"}
+    F -->|"No, iter 1–2: executor (sonnet)"| B
+    F -->|"No, iter ≥ 3: strategist (opus)"| G["Deep diagnosis & hypothesis"]
+    G --> D
+    F -->|"No, iter > 10"| H["Escalate to user"]
+    F -->|Yes| I["Proceed to ablation & analysis"]
 ```
 
 Improvement strategies (in order of priority):
@@ -780,6 +848,11 @@ ssh <server> "cd <workdir> && source .venv/bin/activate && python ours/train.py 
 
 Record results in ours.md and update results.md.
 
+Git commit after ablation studies:
+```bash
+ssh <server> "cd <workdir> && git add -A && git commit -m 'feat(ablation): complete component ablation study'"
+```
+
 #### Step 3.5b: Multi-Seed Runs
 
 Run the final best configuration with **3-5 different random seeds** (e.g., 42, 123, 456, 789, 1024):
@@ -796,6 +869,11 @@ Report **mean ± std** in results.md. Update result table format:
 | Method | Dataset1-Metric (mean±std) | Dataset2-Metric (mean±std) |
 |--------|----------------------------|----------------------------|
 | **Ours** | **86.2±0.3** | **74.8±0.5** |
+```
+
+Git commit after multi-seed runs:
+```bash
+ssh <server> "cd <workdir> && git add -A && git commit -m 'feat(ours): complete multi-seed runs (mean±std reported)'"
 ```
 
 #### Step 3.5c: Claim-Proof Experiments
@@ -829,6 +907,11 @@ Record in ours.md:
 
 Update results.md with a dedicated "Claim Verification" section.
 
+Git commit after claim-proof experiments:
+```bash
+ssh <server> "cd <workdir> && git add -A && git commit -m 'feat(claim-proof): verify claim \"<claim_summary>\"'"
+```
+
 #### Step 3.6: Analysis Experiments
 
 Conduct analysis experiments from plan.md:
@@ -843,6 +926,11 @@ Save visualization outputs:
 ssh <server> "cd <workdir> && source .venv/bin/activate && python ours/analyze.py --type <analysis_type>"
 # Download visualization files to local
 scp <server>:<workdir>/results/figures/* ./experiment/figures/
+```
+
+Git commit after analysis experiments:
+```bash
+ssh <server> "cd <workdir> && git add -A && git commit -m 'feat(analysis): complete <analysis_type> experiments'"
 ```
 
 #### Step 3.7: Update results.md
@@ -1112,6 +1200,11 @@ Convert Report.md to a polished, styled HTML report. Use inline CSS for portabil
 </head>
 <body>
   <!-- Rendered content from Report.md -->
+  <!-- Mermaid diagrams: render ```mermaid blocks as <pre class="mermaid"> -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+  </script>
 </body>
 </html>
 ```
@@ -1145,12 +1238,12 @@ body { font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', serif;
 
 ```bash
 # Local git commit for experiment working files
-git add experiment/ results.md Report.md Report_cn.md Report.html Report_cn.html
+git add experiment/ Report.md Report_cn.md Report.html Report_cn.html
 git commit -m "feat(experiment): complete experiment pipeline — all phases done"
 ```
 
 ### Tool Usage
-- `Read`: plan.md, results.md, comparison.md, ours.md, Proposal.md
+- `Read`: plan.md, experiment/results.md, comparison.md, ours.md, Proposal.md
 - `Write`: Report.md, Report_cn.md, Report.html, Report_cn.html
 - `Bash`: Git operations
 - `TodoWrite`: Track report generation progress
@@ -1239,8 +1332,10 @@ scp -P <port> ./ours/model.py <user>@<host>:<workdir>/ours/model.py
 | Datasets ready | `feat(data): download and verify <dataset_name>` |
 | Baseline reproduced | `feat(baseline): reproduce <method> (metric=XX.X)` |
 | Our method initial | `feat(ours): implement core method architecture` |
-| Our method improved | `feat(ours): improve <component> (+X.X on <dataset>)` |
+| Our method improved (each iteration) | `feat(ours): improve <component> (+X.X on <dataset>)` |
 | Ablation done | `feat(ablation): complete component ablation study` |
+| Multi-seed done | `feat(ours): complete multi-seed runs (mean±std reported)` |
+| Claim-proof done | `feat(claim-proof): verify claim "<claim_summary>"` |
 | Analysis done | `feat(analysis): complete <analysis_type> experiments` |
 | All done | `feat: complete all experiments` |
 
