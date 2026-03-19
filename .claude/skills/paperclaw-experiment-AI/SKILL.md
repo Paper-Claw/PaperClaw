@@ -86,7 +86,7 @@ This skill dispatches work to two dedicated agents. The entry model of the curre
 |------------|------|
 | 1.4 | Design full experiment matrix + claim-proof table |
 | 3.1 | Implement core method architecture from Proposal.md |
-| 3.3 (iter ≥ 3) | Diagnose structural performance gap and form fix hypothesis |
+| 3.3 (iter ≥ 3, i.e., starting from iteration 3) | Diagnose structural performance gap and form fix hypothesis |
 | 4.2 | Generate Report.md (full synthesis of all results) |
 
 Everything else → executor. After strategist returns, resume with executor.
