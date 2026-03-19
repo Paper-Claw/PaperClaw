@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Research Proposal</title>
+  <style>
+    /* Academic clean style */
+    body { font-family: 'Palatino', 'Georgia', serif; max-width: 960px; margin: 0 auto; padding: 2rem; line-height: 1.8; color: #333; }
+    h1 { border-bottom: 2px solid #333; padding-bottom: 0.5rem; }
+    h2 { color: #1a5276; border-bottom: 1px solid #ddd; padding-bottom: 0.3rem; margin-top: 2rem; }
+    h3 { color: #2c3e50; }
+    h4 { color: #34495e; }
+
+    /* Tables */
+    table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: 0.9rem; }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+    th { background: #f5f6fa; font-weight: 600; }
+    tr:nth-child(even) { background: #fafbfc; }
+    tr:hover { background: #f0f4f8; }
+
+    /* Code */
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-size: 0.85em; }
+    pre { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 4px; padding: 1rem; overflow-x: auto; }
+
+    /* Blockquotes */
+    blockquote { border-left: 4px solid #3498db; margin: 1rem 0; padding: 0.5rem 1rem; background: #f8f9fa; }
+
+    /* Collapsible sections — for proofs, Lean 4 code, decision logs */
+    details { margin: 1em 0; border: 1px solid #ddd; border-radius: 6px; padding: 0.5em 1em; }
+    details[open] { background: #fafafa; }
+    summary { cursor: pointer; font-weight: bold; color: #2c3e50; padding: 0.3em 0; }
+    summary:hover { color: #3498db; }
+
+    /* Theorem & proof styling */
+    .theorem { border-left: 4px solid #2c3e50; padding: 0.5em 1em; margin: 1em 0; background: #f9f9f9; }
+    .theorem-name { font-weight: bold; color: #1a5276; }
+    .proof { margin-top: 0.5em; padding-left: 1em; border-left: 3px solid #3498db; }
+    .proof-qed { text-align: right; font-style: italic; color: #666; }
+
+    /* Lean 4 code blocks */
+    .lean-code { background: #f0f3f5; border: 1px solid #d0d7de; border-radius: 4px; padding: 1rem; font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.85em; overflow-x: auto; }
+    .lean-status { font-weight: 600; padding: 4px 8px; border-radius: 3px; }
+    .lean-pass { background: #d4edda; color: #155724; }
+    .lean-partial { background: #fff3cd; color: #856404; }
+    .lean-fail { background: #f8d7da; color: #721c24; }
+
+    /* Decision log */
+    .decision-log td:nth-child(4) { max-width: 400px; font-size: 0.85em; }
+
+    /* Highlight */
+    .highlight { background: #fff3cd; padding: 2px 4px; }
+
+    /* Print styles */
+    @media print {
+      body { max-width: 100%; padding: 1rem; }
+      details[open] { display: block; }
+      details { border: none; }
+      summary { font-weight: bold; }
+    }
+  </style>
+
+  <!-- KaTeX for math rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\[', right: '\\]', display: true},
+        {left: '\\(', right: '\\)', display: false}
+      ]
+    });"></script>
+</head>
+<body>
+  <!-- Rendered content from Proposal.md goes here -->
+  <!-- Convert markdown to HTML, preserving all tables, code blocks, math, and structure -->
+
+  <!--
+    COLLAPSIBLE SECTIONS:
+    1. Detailed proofs (Section 4) — wrap in <details>, default collapsed:
+       <details>
+         <summary>Detailed Proof of Theorem N</summary>
+         <div class="proof">[Full proof content with KaTeX math]</div>
+       </details>
+
+    2. Lean 4 verification code (Section 4) — wrap in <details>, default collapsed:
+       <details>
+         <summary>Lean 4 Verification Code — Theorem N</summary>
+         <pre class="lean-code"><code>[Lean 4 source]</code></pre>
+         <p><span class="lean-status lean-pass">FULL PASS</span></p>
+       </details>
+
+    3. Decision log context (Section 9) — optionally collapsible for long context entries:
+       <details>
+         <summary>Decision #N Context</summary>
+         <div>[Full context with background, options, evidence]</div>
+       </details>
+  -->
+
+  <!-- Mermaid diagram rendering (for method architecture in Section 5) -->
+  <!-- Convert ```mermaid blocks to <pre class="mermaid"> tags -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({ startOnLoad: true, theme: 'neutral' });
+  </script>
+</body>
+</html>
+
+<!--
+  CHINESE VERSION (Proposal_cn.html):
+  - Copy this template
+  - Change lang="en" to lang="zh-CN"
+  - Replace body font-family with:
+    font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', serif;
+  - Translate all content to Chinese (keep numbers, method names, dataset names in English)
+  - Keep technical terms with English in parentheses, e.g., "理论分析 (Theoretical Analysis)"
+  - Keep mathematical notation unchanged
+  - Keep Lean 4 code unchanged (code is language-neutral)
+-->

@@ -739,6 +739,8 @@ At every decision point, strip away assumptions and reason from fundamentals:
 
 ### C. Proposal Structure Template
 
+> **Template file:** `references/proposal-template.md` contains the authoritative Proposal.md skeleton. The inline template below provides the full structure with detailed generation instructions. When in doubt, follow the template file for structure and this appendix for content guidance.
+
 **Citation convention:** All sections use in-text citations as "[N]" referencing the numbered list in Section 10. Every paper mentioned by name MUST have a corresponding entry in Section 10 and in `./reference.bib`.
 
 ```markdown
@@ -1017,6 +1019,8 @@ this section — it is filled in by the orchestrator.]
 
 ### D. HTML Rendering Rules
 
+> **Template file:** `references/proposal-html-template.html` contains the authoritative HTML/CSS template with KaTeX, Mermaid, and collapsible section styling. Use it as the base when generating Proposal.html and Proposal_cn.html.
+
 The HTML files (`Proposal.html` and `Proposal_cn.html`) must include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
 
 #### Collapsible Sections
@@ -1226,6 +1230,8 @@ Append new decisions as they are made. Never overwrite existing entries. Source 
 
 Load on demand:
 - `references/domain.md` — **domain configuration** (target venues, databases, resource estimates, domain examples). Replace this file to adapt the skill for a different research domain.
+- `references/proposal-template.md` — **Proposal.md structure skeleton** (10-section template with appendices). The authoritative structure for generated Proposals.
+- `references/proposal-html-template.html` — **HTML/CSS template** for Proposal.html / Proposal_cn.html (KaTeX math, Mermaid diagrams, collapsible proofs/Lean 4 code).
 - `references/iteration-loop.md` — detailed loop logic and loop-back decision tree
 - `references/gap-analysis-guide.md` — 5 gap types, analysis dimensions, examples
 - `references/5w1h-framework.md` — 5W1H framework for Phase 0
