@@ -8,7 +8,7 @@ description: >
   state/log/papers file management, HTML generation, Chinese translation, and
   reference.bib generation. This is the default workhorse agent — invoke for
   anything not requiring original research reasoning.
-tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent", "TodoWrite"]
+tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent", "TodoWrite", "Skill"]
 model: sonnet
 ---
 
@@ -52,7 +52,7 @@ You are the execution backbone of the PaperClaw ideation pipeline. You handle al
 ### Phase 4.3 — Lean 4 Build Execution
 - Set up Lean 4 environment locally (elan install if needed, or use system Lean 4)
 - Initialize project: `lake init IdeationProofs`, add Mathlib if needed
-- After strategist writes `.lean` files: run `lake build` (300s timeout)
+- After strategist writes `.lean` files: run `lake build`. Use `run_in_background: true` for first-time builds (Mathlib download can take 10–30 min, exceeding Bash tool's 600s max). For subsequent builds with warm `.lake/` cache, use foreground Bash with `timeout: 300000`.
 - Classify result: FULL PASS / PARTIAL PASS / Proof Error / Syntax Error / Resource Error
 - On Syntax Error: fix imports/definitions and retry immediately (does NOT count toward limit)
 - On Proof Error: collect error output, send back to strategist for diagnosis and fix

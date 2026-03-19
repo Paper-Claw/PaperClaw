@@ -545,7 +545,7 @@ theorem [theorem_name] : [formal_statement] := by
 export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH" && cd ./ideation/lean4 && lake build
 ```
 
-**Bash timeout:** 1800000ms (30 minutes). First-time Mathlib download can take 10–30 minutes; subsequent builds with a warm `.lake/` cache are fast (set timeout to 300000ms if `.lake/packages/` already exists).
+**Bash timeout:** Use `run_in_background: true` for `lake build` so the build runs asynchronously — first-time Mathlib download can take 10–30 minutes, which exceeds the Bash tool's 600-second maximum. The executor will be notified when the build completes. For subsequent builds with a warm `.lake/` cache, a foreground Bash call with `timeout: 300000` (5 minutes) is acceptable — check for `.lake/packages/` existence to decide which mode to use.
 
 ##### 4.3.5 — Result Classification
 

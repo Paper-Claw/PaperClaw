@@ -22,6 +22,18 @@ Automate the complete experiment lifecycle: from remote server setup, through ba
 > Every failure is an opportunity to learn — record it.
 > Every claim in the Proposal must be proven by a dedicated experiment.
 
+## Unified Project Principles
+
+All experiment code on the remote server MUST follow these 7 principles. They are the authoritative source — agents reference them, not hardcoded directory layouts.
+
+1. **Single project** — All methods (baselines + ours) live in one Python project with a shared `pyproject.toml` or `setup.py`, not in separate isolated folders.
+2. **Common model interface** — All methods (baselines + ours) implement a shared base class or interface, registered via a model registry/factory pattern.
+3. **Config-driven switching** — Switch between methods via config files (YAML/JSON), not by running scripts from different directories.
+4. **Shared infrastructure** — Data loading, training loop, evaluation metrics, and logging are shared across all methods to ensure fair comparison.
+5. **Unified entry points** — Single `train.py`, `eval.py`, etc. that work for any method via config. No separate per-method scripts.
+6. **Adapt to existing codebases** — When baselines have official repos, extract and adapt their model code into the unified project's model module rather than running the cloned repo directly. If the project follows an existing codebase, respect that codebase's conventions.
+7. **README.md** — Every experiment project must include a `README.md` documenting: project structure, how to install dependencies, how to run training/evaluation for each method, how to reproduce key results, and dataset preparation.
+
 ---
 
 ## Workflow Overview
@@ -99,7 +111,7 @@ When starting a new session, check if `./experiment/state.md` exists:
 
 1. **If exists** → Read state.md to determine current phase/step
 2. **Read log.md** for recent events and context
-3. **Check remote server** via SSH: reachable? running processes? latest checkpoint?
+3. **Check remote server** via SSH: reachable? Check for active tmux sessions (`tmux list-sessions 2>/dev/null | grep '^paperclaw-'`). If a training job is still running in a `paperclaw-*` session, resume monitoring it instead of restarting. Check latest checkpoint.
    - If SSH **unreachable**: do NOT escalate immediately. Retry once after 30 seconds.
    - If still unreachable: ask user via `AskUserQuestion` with three options:
      1. **Wait** — user will restore server access; resume after confirmation
@@ -370,17 +382,22 @@ Extract all explicit and implicit claims from Proposal.md. Each claim must map t
 ```
 
 > **Rule**: Every non-trivial claim must have a Claim-Proof row. If untestable, flag it in plan.md.
+>
+> **Output rule**: The strategist writes all four tables directly into `./experiment/plan.md` under an `## Experiment Matrix` section. Do NOT create separate files (e.g., `experiment_matrix.md`).
 
-#### Step 1.5: Write plan.md
+#### Step 1.5: Finalize plan.md
 
-Merge research (1.1–1.3) with the strategist's experiment matrix (1.4) into `./experiment/plan.md`. Include:
+The executor supplements the strategist's experiment matrix (already in plan.md from Step 1.4) with:
 - Estimated compute budget (GPU hours)
 - Execution order and dependencies
 - Risk assessment and fallback plans
 
-#### Step 1.6: Initialize Git Repository
+#### Step 1.6: Initialize Unified Project & Git Repository
 
-On the remote server: `git init`, create `.gitignore` (exclude `__pycache__/`, `.venv/`, `data/`, `*.pt`, `*.pth`, `wandb/`, `.env`, credentials, etc.), initial commit.
+On the remote server:
+1. Create the unified Python project scaffold following the **Unified Project Principles** above: `pyproject.toml` (or `setup.py`), a model registry/factory, shared data loading, shared training loop, shared evaluation, and unified entry points (`train.py`, `eval.py`). The concrete directory layout is decided by the strategist based on the project domain and any existing codebase conventions.
+2. Write an initial `README.md` documenting the project structure, installation, and basic usage.
+3. `git init`, create `.gitignore` (exclude `__pycache__/`, `.venv/`, `data/`, `*.pt`, `*.pth`, `wandb/`, `.env`, credentials, etc.), initial commit.
 
 #### Step 1.7: Create results.md
 
@@ -425,14 +442,14 @@ For each dataset in plan.md: create `data/<dataset>/`, download, verify integrit
 #### Step 2.2: Setup Baseline Code
 
 For each baseline:
-- **Option A**: Clone official repo → `baselines/<method>/`, install dependencies
-- **Option B**: Implement from paper if no code available
+- **Option A**: Clone official repo as reference → extract and adapt model code into the unified project's model module, conforming to the common model interface. Write a config file for the baseline. If following an existing codebase, respect its conventions.
+- **Option B**: Implement from paper if no code available, as a model class in the unified project conforming to the common interface.
 
 Git commit after each baseline code setup.
 
-#### Step 2.3: Adapt and Run
+#### Step 2.3: Run Baselines
 
-Adapt baseline code to use our datasets. Write unified evaluation script (`eval_baseline.py`). Run training/evaluation.
+Use the project's unified training and evaluation entry points with each baseline's config file. Run training/evaluation.
 
 #### Step 2.4: Compare Results
 
@@ -488,18 +505,19 @@ Implement the proposed method, achieve SOTA results on all datasets, conduct abl
 #### Step 3.1: Implement Core Method *(strategist)*
 
 Based on Proposal.md method design:
-1. Create `ours/` directory structure
+1. Implement our method as a new model class in the unified project's model module, conforming to the common model interface
 2. Implement model architecture (PyTorch, type hints, docstrings, ≤400 lines/file)
-3. Write `ours/train.py` (config-driven, logging, checkpoint saving, seed setting)
-4. Write `ours/eval.py` (consistent metrics with baselines, parseable output)
+3. Write a config file for our method (config-driven hyperparameters, checkpoint saving, seed setting)
+4. Ensure the unified entry points (`train.py`, `eval.py`) work with our method's config
+5. Update `README.md` with our method's usage instructions
 
-Git commit on remote: `feat(ours): implement core method architecture`
+Git commit on remote: `feat(method): implement core method architecture`
 
 #### Step 3.2: Initial Training & Debugging
 
 Run on each dataset. Debug common issues: shape mismatches, NaN/Inf loss, OOM, non-convergence.
 
-Git commit after training runs successfully: `feat(ours): initial training working on <dataset>`
+Git commit after training runs successfully: `feat(method): initial training working on <dataset>`
 
 #### Step 3.3: Iterative Performance Improvement
 
@@ -521,7 +539,7 @@ flowchart TD
 
 Improvement priority: hyperparameters → architecture → training strategy → loss function → ensemble.
 
-Git commit after each significant improvement: `feat(ours): improve <component> (+X.X on <dataset>)`
+Git commit after each significant improvement: `feat(method): improve <component> (+X.X on <dataset>)`
 
 #### Step 3.4: Log Each Iteration
 
@@ -540,7 +558,7 @@ Record results in ours.md and results.md. Git commit: `feat(ablation): complete 
 
 Run final config with 3–5 seeds (42, 123, 456, 789, 1024). Report **mean ± std** in results.md.
 
-Git commit: `feat(ours): complete multi-seed runs (mean±std reported)`
+Git commit: `feat(method): complete multi-seed runs (mean±std reported)`
 
 #### Step 3.7: Claim-Proof Experiments
 
@@ -564,9 +582,11 @@ Conduct analysis from plan.md: efficiency, visualization (t-SNE, attention maps)
 
 Git commit: `feat(analysis): complete <analysis_type> experiments`
 
-#### Step 3.9: Update results.md
+#### Step 3.9: Update results.md & README.md
 
 Fill in all remaining rows: ours main results, ablation tables, analysis tables, figure references.
+
+Update the project's `README.md` on the remote server with final reproduction commands for all methods.
 
 Git commit locally: `docs(results): update results for all experiments`
 
@@ -639,6 +659,8 @@ Chinese HTML version using same template. Change `lang="zh-CN"`, use Chinese fon
 
 #### Step 4.6: Final Git Commit
 
+Update `README.md` on the remote server with final reproduction commands for all experiments.
+
 ```bash
 git add experiment/ Report.md Report_cn.md Report.html Report_cn.html
 git commit -m "feat(experiment): complete experiment pipeline — all phases done"
@@ -698,17 +720,39 @@ ssh -o ConnectTimeout=30 <user>@<host> -p <port> "cd <workdir> && <command>"
 # With venv
 ssh -o ConnectTimeout=30 <user>@<host> -p <port> "cd <workdir> && source .venv/bin/activate && <command>"
 
-# Long-running training
-ssh <server> "cd <workdir> && source .venv/bin/activate && nohup python train.py > train.log 2>&1 &"
+# Long-running training (use tmux, NOT nohup)
+# Session naming: paperclaw-<experiment_id> (e.g., paperclaw-train-baseline-pomo, paperclaw-ablation-01)
+# The command auto-closes the tmux session when the program finishes.
+ssh <server> "tmux new-session -d -s paperclaw-<experiment_id> 'cd <workdir> && source .venv/bin/activate && python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<experiment_id>-done'"
 
-# Check training status
+# Check training status (attach or read log)
+ssh <server> "tmux capture-pane -t paperclaw-<experiment_id> -p | tail -50"
+# Or read the log file directly:
 ssh <server> "cd <workdir> && tail -50 train.log"
+
+# Check if a tmux session is still running
+ssh <server> "tmux has-session -t paperclaw-<experiment_id> 2>/dev/null && echo 'RUNNING' || echo 'FINISHED'"
+
+# Wait for a tmux session to finish (blocking)
+ssh <server> "tmux wait-for paperclaw-<experiment_id>-done"
+
+# Kill a stuck session (only when explicitly needed)
+ssh <server> "tmux kill-session -t paperclaw-<experiment_id>"
+
+# List all paperclaw sessions
+ssh <server> "tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'No active sessions'"
 
 # File transfer
 scp -P <port> <user>@<host>:<workdir>/results/* ./experiment/figures/
 ```
 
-Timeout handling: use `nohup` for training, `ConnectTimeout=30` for short commands, retry 3× on SSH drop.
+**Tmux session lifecycle:**
+1. Start: `tmux new-session -d -s paperclaw-<id> '<command>; tmux wait-for -S paperclaw-<id>-done'`
+2. Monitor: `tmux has-session -t paperclaw-<id>` to check if still running, or `tmux capture-pane` to read output
+3. Auto-cleanup: When the command finishes, the session closes automatically (since the shell command was the only process). The `tmux wait-for -S` signal lets the local side know it's done.
+4. **Never leave orphaned sessions.** If a session is no longer needed (e.g., after error recovery), kill it explicitly with `tmux kill-session`.
+
+Timeout handling: use `tmux` for all long-running jobs (training, evaluation, dataset download), `ConnectTimeout=30` for short commands, retry 3× on SSH drop.
 
 ### C. Git Strategy
 
@@ -716,15 +760,15 @@ Timeout handling: use `nohup` for training, `ConnectTimeout=30` for short comman
 
 | Milestone | Commit Message |
 |-----------|---------------|
-| Init | `chore: initialize experiment repository` |
+| Init | `chore: initialize unified experiment project` |
 | Dataset ready | `feat(data): download and verify <dataset>` |
-| Baseline code setup | `feat(baseline): setup <method> code` |
+| Baseline code setup | `feat(baseline): integrate <method> into unified project` |
 | Baseline reproduced | `feat(baseline): reproduce <method> (metric=XX.X)` |
-| Our method initial | `feat(ours): implement core method architecture` |
-| Training working | `feat(ours): initial training working on <dataset>` |
-| Each improvement | `feat(ours): improve <component> (+X.X on <dataset>)` |
+| Our method initial | `feat(method): implement core method architecture` |
+| Training working | `feat(method): initial training working on <dataset>` |
+| Each improvement | `feat(method): improve <component> (+X.X on <dataset>)` |
 | Ablation done | `feat(ablation): complete component ablation study` |
-| Multi-seed done | `feat(ours): complete multi-seed runs (mean±std)` |
+| Multi-seed done | `feat(method): complete multi-seed runs (mean±std)` |
 | Claim-proof done | `feat(claim-proof): verify claim "<summary>"` |
 | Analysis done | `feat(analysis): complete <type> experiments` |
 | All done | `feat: complete all experiments` |
@@ -748,7 +792,7 @@ Timeout handling: use `nohup` for training, `ConnectTimeout=30` for short comman
 
 | Error | Action |
 |-------|--------|
-| SSH connection lost | Wait 30s → retry 3× → ask user. Training preserved via `nohup`. |
+| SSH connection lost | Wait 30s → retry 3× → ask user. Training preserved via `tmux` — check `tmux has-session -t paperclaw-<id>` on reconnect. |
 | Training crash | Check `tail -100 train.log`. Common fixes: reduce batch size, check data path, verify GPU. Resume from latest checkpoint. |
 | Out of disk | `df -h && du -sh <workdir>/*`. Clean old checkpoints, cached data. Ask user if still insufficient. |
 | Out of GPU memory | Reduce batch size → gradient accumulation → mixed precision (fp16/bf16) → gradient checkpointing. |

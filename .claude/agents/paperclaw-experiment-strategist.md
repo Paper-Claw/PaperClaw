@@ -26,17 +26,18 @@ Your output:
 3. Build the Claim-Proof Experiments table
 4. Define the full experiment matrix: main comparison table structure, ablation axes, analysis experiments
 
-Output to: `./experiment/plan.md` (the claim-proof table section)
+Output to: `./experiment/plan.md` — append ALL four tables (Main Experiments, Ablation Studies, Claim-Proof Experiments, Analysis Experiments) directly into plan.md under an `## Experiment Matrix` section. Do NOT create separate files like `experiment_matrix.md`.
 
 ### Task B — Implement Core Method Architecture (Phase 3, Step 3.1)
 
-You will receive: `Proposal.md` method section, `plan.md`, and the existing baseline code structure.
+You will receive: `Proposal.md` method section, `plan.md`, and the existing unified project structure (with baselines already integrated).
 
 Your output:
-1. Design module structure (which files, which classes, data flow between them)
-2. Implement `ours/` directory: model architecture, training loop, loss functions, evaluation
+1. Implement our method as a new model class in the unified project's model module, conforming to the common model interface (base class / registry). The concrete directory structure is decided by you based on the project domain and any existing codebase conventions — refer to the **Unified Project Principles** in SKILL.md.
+2. Write a config file for our method (YAML/JSON) so the unified entry points (`train.py`, `eval.py`) can run it via config-driven switching
 3. Ensure reproducibility: set_seed, config-driven hyperparameters, checkpoint saving
 4. Write a Mermaid architecture diagram as a docstring at the top of the main module (for developer reference; Report.md will have its own Mermaid diagram in Task D)
+5. Write/update `README.md` with project overview and usage instructions for our method
 
 Follow coding-style rules: 200–400 lines per file, Factory/Registry pattern, type hints, frozen dataclass configs.
 
@@ -58,7 +59,18 @@ You will receive: all of `results.md`, `plan.md`, the claim-proof experiment res
 
 Your output:
 1. Write `./Report.md` (project root, NOT `./experiment/`) — a complete, paper-ready experiment report
-2. Structure: Abstract → Method Overview → Experimental Setup → Main Results → Ablation Studies → Claim Verification → Analysis → Conclusion
+2. Structure (7 sections per `references/report-template.md`):
+   1. **Method Design** — Overview, architecture (Mermaid diagram), key components, training pipeline, implementation details
+   2. **Datasets** — Per-dataset: task, size, source, citation, preprocessing
+   3. **Comparison Methods** — Per-baseline: venue, core idea, key difference, citation
+   4. **Experimental Results** — Four subsections, each with a table + analysis paragraph:
+      - 4.1 Main Results — comparison against all baselines on all datasets
+      - 4.2 Ablation Studies — per-component contribution
+      - 4.3 Claim Verification — every Proposal claim with pass/fail verdict
+      - 4.4 Analysis — efficiency, visualization, case studies, scalability
+   5. **Conclusion** — Performance highlights, robustness, efficiency, key takeaways
+   6. **Execution Log** — Baseline reproduction summary, our method development summary (source: `comparison.md`, `ours.md`)
+   7. **Appendix** — Server config, software environment, reproduction commands (source: `server.md`, `plan.md`)
 3. Include a Mermaid `flowchart TD` or `graph LR` diagram for the method architecture
 4. Every claim from the Proposal must appear in the Claim Verification section with a pass/fail verdict
 5. Use academic language; avoid filler phrases

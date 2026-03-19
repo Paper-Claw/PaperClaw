@@ -41,7 +41,7 @@ graph LR
 ### 1.3 Key Components
 
 For each key module/component:
-- **Component Name** (`ours/<file>.py:<class_name>`)
+- **Component Name** (`<model_module>/<file>.py:<class_name>`)
   - Purpose: what it does
   - Input/Output: tensor shapes
   - Key idea: core innovation
@@ -53,7 +53,7 @@ Training procedure, loss functions, optimization details.
 ### 1.5 Implementation Details
 
 Hyperparameters, augmentation, pre/post-processing.
-- Code reference: `ours/train.py`
+- Code reference: the project's unified training entry point (e.g., `train.py`)
 
 ---
 
