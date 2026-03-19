@@ -390,8 +390,8 @@ Let **N** = current `Iteration` value read from `./ideation/state.md` **before m
 ## Reference Files
 
 These files are co-located with this skill. Try paths in order until one succeeds:
-- **Project install:** `.claude/skills/paperclaw-reviewing-AI/references/`
-- **Global install:** `~/.claude/skills/paperclaw-reviewing-AI/references/`
+- **Project install:** `.claude/skills/paperclaw-ideation-reviewing-AI/references/`
+- **Global install:** `~/.claude/skills/paperclaw-ideation-reviewing-AI/references/`
 
 Load on demand:
 - `<ref-dir>/conference-readiness.md` — scoring rubric with dimension definitions and Lean 4 penalty rules
