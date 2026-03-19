@@ -43,7 +43,7 @@ flowchart TD
     TRIGGER["state.md = review-pending"] --> S1["Step 1: Detect Reviewers\nQuery CLI tools & models"]
     S1 --> S2["Step 2: Assign Personas\n5 unique reviewer roles"]
     S2 --> S3["Step 3: Dispatch in Parallel\n5min timeout, fallback chain"]
-    S3 --> S4["Step 4: Aggregate Scores\nMedian per dimension + Lean 4 audit"]
+    S3 --> S4["Step 4: Aggregate Scores\nMean per dimension (drop highest if N≥5) + Lean 4 audit"]
     S4 --> S5["Step 5: Synthesize Feedback\nStrip scores → qualitative themes"]
     S5 --> S6{"Step 6: Gate Decision"}
     S6 -->|"PASS (≥16/20, all dims ≥3)"| PASS["state → Done\nInvoke ideation for final outputs"]
@@ -246,15 +246,16 @@ Save each review to `./ideation/reviews/iteration-N/RX-[family].md`.
 
 ### Goal
 
-Compute median scores per dimension, apply Lean 4 adjustments, and determine pass/fail.
+Compute mean scores per dimension, apply Lean 4 adjustments, and determine pass/fail.
 
 ### Steps
 
 #### 4.1: Parse and Aggregate
 
 1. Parse each review's `### Scores` section (Novelty, Significance, Soundness, Feasibility)
-2. For each dimension, compute the **median** across all reviewers
-3. Sum medians for the total
+2. If N >= 5 reviewers, **drop the highest score** per dimension before averaging (stricter evaluation)
+3. Compute the **mean** of the (remaining) scores per dimension, rounded to one decimal place
+4. Sum means for the total
 
 #### 4.2: Lean 4 Verification Audit (orchestrator-level)
 
@@ -269,7 +270,7 @@ The orchestrator independently audits Lean 4 status — this is separate from wh
 
 #### 4.3: Pass Condition
 
-- Median total >= **16/20** AND no median dimension < **3**
+- Mean total >= **16.0/20** AND no mean dimension < **3.0**
 
 #### 4.4: Split Decision Detection
 
@@ -279,7 +280,7 @@ Write the full aggregation report (with scores) to `./ideation/reviews/iteration
 
 ### Completion Criteria
 
-- [x] Median scores computed for all 4 dimensions
+- [x] Mean scores computed for all 4 dimensions
 - [x] Lean 4 audit completed with Soundness adjustment applied
 - [x] Split decisions flagged
 - [x] Aggregation report written
@@ -329,7 +330,7 @@ Write to `./ideation/reviews/iteration-N/metareview.md` using the format in `ref
 
 Determine pass/fail, update state, and invoke the ideation skill for next action.
 
-### PASS (median total >= 16, no median dim < 3)
+### PASS (mean total >= 16.0, no mean dim < 3.0)
 
 1. Write aggregation report to `./ideation/reviews/iteration-N/aggregation.md`
 2. Update `./ideation/state.md`: `Phase: generating-outputs` (NOT `Done` yet — output generation must complete before marking Done)
@@ -379,7 +380,7 @@ Let **N** = current `Iteration` value read from `./ideation/state.md` **before m
 1. **Independence** — reviewers evaluate Proposal.md only, never working files
 2. **Information barrier** — metareview must contain zero scores, zero dimension names, zero threshold language
 3. **Minimum panel** — at least 3 valid reviews before aggregation
-4. **Median aggregation** — robust to outliers; for even N, take the lower middle value
+4. **Mean aggregation** — uses all reviewer signal; if N >= 5, drop the highest score per dimension for stricter evaluation
 5. **Dual Lean 4 audit** — reviewers assess from Proposal.md; orchestrator verifies from source files
 6. **State-driven communication** — gate result communicated only via state.md, never in metareview
 7. **Fallback resilience** — follow the fallback chain until 3 reviews are collected

@@ -5,22 +5,22 @@
 ### Per-Dimension Aggregation
 For each of the 4 dimensions (Novelty, Significance, Technical Soundness, Experimental Feasibility):
 1. Collect scores from all N reviewers
-2. Compute the **median** (not mean — robust to outliers)
-3. If N is even, take the lower of the two middle values (conservative)
+2. If N >= 5, **drop the highest score** before averaging (stricter evaluation)
+3. Compute the **mean** of the (remaining) scores, rounded to one decimal place
 
 ### Total Score
-Sum the 4 median dimension scores.
+Sum the 4 mean dimension scores.
 
 ### Pass Condition
-- Median total **>= 16/20**
-- No single median dimension **< 3**
+- Mean total **>= 16.0/20**
+- No single mean dimension **< 3.0**
 - Both conditions must be met
 
 ### Split Decision Detection
 If any dimension has a range (max - min) > 2 across reviewers:
 1. Flag that dimension as "split decision"
 2. Include all reviewer justifications for that dimension in the aggregation report
-3. If the median for that dimension is exactly 3 (borderline), flag as a weakness in feedback synthesis
+3. If the mean for that dimension is below 3.5 (borderline), flag as a weakness in feedback synthesis
 
 ---
 
@@ -40,11 +40,11 @@ Lean 4 verification is **expected** for all theoretical work — having it does 
 | Status | Condition | Adjustment |
 |--------|-----------|------------|
 | **FULL PASS** | `lake build` succeeds, no `sorry` | No change (verification is expected, not a bonus) |
-| **PARTIAL PASS** | `sorry` on any sub-goals (empirical or otherwise) | -1 to median Soundness (floor at 1) |
-| **FAIL** | Verification attempted, failed after retries | -1 to median Soundness (floor at 1) |
+| **PARTIAL PASS** | `sorry` on any sub-goals (empirical or otherwise) | -1 to mean Soundness (floor at 1) |
+| **FAIL** | Verification attempted, failed after retries | -1 to mean Soundness (floor at 1) |
 | **SKIPPED (justified + rigorous NL proof)** | No formalizable claims exist OR skip is explicitly justified AND NL proof is carefully audited and sound | No change — apply conservatively; default to -1 if in doubt |
-| **SKIPPED (unjustified or NL proof insufficient)** | Formalizable claims exist but no verification; or justification is weak; or NL proof has gaps | -1 to median Soundness (floor at 1) |
-| **ESCALATION** | Ideation pipeline flagged `Lean4Escalation: true` | Cap median Soundness at 2 |
+| **SKIPPED (unjustified or NL proof insufficient)** | Formalizable claims exist but no verification; or justification is weak; or NL proof has gaps | -1 to mean Soundness (floor at 1) |
+| **ESCALATION** | Ideation pipeline flagged `Lean4Escalation: true` | Cap mean Soundness at 2 |
 
 > **Note:** This table is the single source of truth for Lean 4 adjustment rules. Both `conference-readiness.md` and the reviewing SKILL.md reference this table — do not duplicate the rules elsewhere.
 

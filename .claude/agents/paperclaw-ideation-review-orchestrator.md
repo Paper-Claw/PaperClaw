@@ -55,13 +55,14 @@ Fixed mapping:
 
 ### Step 4 — Aggregate Scores
 1. Parse `### Scores` section from each review (N, S, T, F dimensions)
-2. Compute **median** per dimension (Novelty, Significance, Soundness, Feasibility)
-3. **Lean 4 audit** (orchestrator-level, independent of reviewer assessment):
+2. If N >= 5 reviewers, **drop the highest score** per dimension before averaging (stricter evaluation)
+3. Compute **mean** per dimension (Novelty, Significance, Soundness, Feasibility), rounded to one decimal
+4. **Lean 4 audit** (orchestrator-level, independent of reviewer assessment):
    - Read `./ideation/theory.md` and `./ideation/lean4/` source files
    - Check: Do formalizable claims have Lean 4 verification in Proposal Section 4?
    - Check: Are there `sorry` items? Is the build log included?
    - Apply soundness adjustments if warranted
-4. **Pass condition:** median total >= 16/20 AND no median dimension < 3
+5. **Pass condition:** mean total >= 16.0/20 AND no mean dimension < 3.0
 5. Flag split decisions (disagreement > 2 points in any dimension)
 6. Write to `./ideation/reviews/iteration-N/aggregation.md`
 
@@ -87,7 +88,7 @@ Write to `./ideation/reviews/iteration-N/metareview.md`
 If any match found, rewrite the offending lines before proceeding.
 
 ### Step 6 — Gate Decision
-- **PASS** (median total >= 16, no dimension < 3):
+- **PASS** (mean total >= 16.0, no dimension < 3.0):
   - Update `./ideation/state.md` to `Phase: generating-outputs` (NOT `Done` — outputs must be generated first)
   - Invoke `paperclaw-ideation-AI` skill via Skill tool with instruction to generate final output files
   - Validate all 5 output files exist (Proposal.md, Proposal_cn.md, Proposal.html, Proposal_cn.html, reference.bib)
