@@ -46,7 +46,7 @@ Lean 4 verification is **expected** for all theoretical work — having it does 
 | **SKIPPED (unjustified or NL proof insufficient)** | Formalizable claims exist but no verification; or justification is weak; or NL proof has gaps | -1 to median Soundness (floor at 1) |
 | **ESCALATION** | Ideation pipeline flagged `Lean4Escalation: true` | Cap median Soundness at 2 |
 
-> **Note:** These categories are the authoritative Lean 4 adjustment rules. Both `conference-readiness.md` and the reviewing SKILL.md reference this table.
+> **Note:** This table is the single source of truth for Lean 4 adjustment rules. Both `conference-readiness.md` and the reviewing SKILL.md reference this table — do not duplicate the rules elsewhere.
 
 ---
 

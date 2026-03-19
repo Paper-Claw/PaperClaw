@@ -298,8 +298,8 @@ Parse the Proposal.md and generate a comprehensive, actionable experiment plan.
 
 ### Prerequisites
 
-- `./ideation/Proposal.md` must exist (output of paperclaw-ideation-AI)
-- Fallback: check `./Proposal.md`, then ask the user for the path
+- `./Proposal.md` must exist (output of paperclaw-ideation-AI)
+- If not found: ask the user for the path
 
 ### Steps
 

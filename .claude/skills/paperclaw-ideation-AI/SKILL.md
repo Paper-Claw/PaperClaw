@@ -33,19 +33,20 @@ An auto-pilot, literature-driven pipeline that takes a raw research spark and re
 | `paperclaw-ideation-executor` | sonnet | Default workhorse — all web searches, literature collection, feasibility scouting, Lean 4 build execution, file management, HTML generation, Chinese translation, reference.bib |
 | `paperclaw-ideation-strategist` | opus | High-judgment only — exactly 5 tasks |
 
-### Strategist (opus) Triggers — exactly 5 tasks:
+### Strategist (opus) Triggers — exactly 6 tasks:
 
 | Phase.Step | Task |
 |-----------|------|
 | 0.2-0.3 | Synthesize field survey → Background Briefing → 5W1H auto-inference |
-| 2 + 2.5 decision | Gap analysis → propose 2-3 directions → auto-select best direction |
+| 2 (Task B1) | Gap analysis → propose 2-3 directions with trade-offs |
+| 2.5 decision (Task B2) | Receive feasibility data from executor → auto-select best direction |
 | 4.1-4.5 | SMART RQ + theoretical analysis + Lean 4 proof writing + method design + experiment plan |
 | Handoff | Write complete Proposal.md draft (10 sections + appendices) |
 | Revision | Interpret metareview feedback, revise Proposal.md, write feedback.md |
 
 Everything else goes to the executor (sonnet).
 
-**Flow:** When this skill is triggered, invoke `paperclaw-ideation-executor` as the main agent. The executor runs the pipeline and spawns `paperclaw-ideation-strategist` at each trigger point above. The strategist completes its task and returns; the executor resumes.
+**Flow:** When this skill is triggered, invoke `paperclaw-ideation-executor` as the main agent. The executor runs the pipeline and spawns `paperclaw-ideation-strategist` at each trigger point above. The strategist completes its task and returns; the executor resumes. Note: Task B is split into two invocations — B1 (propose directions) then executor scouts feasibility, then B2 (auto-select direction).
 
 ---
 

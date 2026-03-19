@@ -8,7 +8,7 @@ description: >
   paperclaw-ideation-reviewer (opus) for R1 Claude review. Handles all other
   reviewers via codex/opencode CLI. This is the default workhorse — invoke
   instead of running the reviewing skill directly.
-tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent"]
+tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent", "Skill"]
 model: sonnet
 ---
 
@@ -88,17 +88,19 @@ If any match found, rewrite the offending lines before proceeding.
 
 ### Step 6 — Gate Decision
 - **PASS** (median total >= 16, no dimension < 3):
-  - Update `./ideation/state.md` to `Phase: Done`
+  - Update `./ideation/state.md` to `Phase: generating-outputs` (NOT `Done` — outputs must be generated first)
   - Invoke `paperclaw-ideation-AI` skill via Skill tool with instruction to generate final output files
   - Validate all 5 output files exist (Proposal.md, Proposal_cn.md, Proposal.html, Proposal_cn.html, reference.bib)
+  - Only after validation passes: update `./ideation/state.md` to `Phase: Done`
 - **FAIL** (iteration < 10):
-  - Update `./ideation/state.md` to `Phase: revision-N`
+  - Save current iteration number N from `./ideation/state.md` before any changes
+  - Update `./ideation/state.md` to `Phase: revision-N`, `Iteration: N+1`
   - Write metareview.md (already done in Step 5)
   - Invoke `paperclaw-ideation-AI` skill via Skill tool with metareview path
 - **Force-proceed** (iteration = 10):
-  - Update state to `Phase: Done` with caveat
-  - Add "Review Panel Notes" section to Proposal.md
-  - Invoke ideation skill for final output generation
+  - Update state to `Phase: generating-outputs` (NOT `Done` — same pattern as PASS)
+  - Invoke `paperclaw-ideation-AI` skill via Skill tool with instruction to generate final output files AND add "Review Panel Notes" subsection to Proposal Section 9
+  - Validate all 5 output files exist; only then update state to `Phase: Done`
 
 ## Execution Standards
 

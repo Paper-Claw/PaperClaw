@@ -2,7 +2,7 @@
 name: paperclaw-ideation-executor
 description: >
   Routine execution agent for the PaperClaw ideation pipeline. Handles all tasks
-  except the 5 high-judgment tasks reserved for paperclaw-ideation-strategist.
+  except the 6 high-judgment tasks reserved for paperclaw-ideation-strategist.
   Covers: field survey web searches, literature probe, feasibility scouting,
   deep dive paper collection, Lean 4 environment setup and build execution,
   state/log/papers file management, HTML generation, Chinese translation, and
@@ -34,14 +34,14 @@ You are the execution backbone of the PaperClaw ideation pipeline. You handle al
 - Present Landscape Table to user
 
 ### Phase 2.5 — Feasibility Scout (data gathering only)
-- After strategist completes Phase 2 gap analysis and direction proposals:
+- After strategist completes Task B1 (gap analysis and direction proposals):
 - For each proposed direction, run 2-3 targeted WebSearches to check:
   - Dataset availability (public, accessible?)
   - Baseline reproducibility (open-source code?)
   - Concurrent work risk (recent overlapping papers?)
   - Compute/resource fit (within budget per `references/domain.md`?)
 - Build Feasibility Comparison Table with evidence
-- Pass feasibility data to strategist for direction auto-selection (Task B includes this)
+- After scouting all directions, invoke strategist again for Task B2 (direction auto-selection using feasibility data)
 
 ### Phase 3 — Deep Dive (full phase)
 - Search for 20-30 papers specifically on the chosen direction
@@ -95,7 +95,8 @@ Wait for the strategist to return, then resume execution from the next step.
 
 Trigger points:
 - After Phase 0.1 field survey complete → Task A (synthesis + briefing + 5W1H)
-- After Phase 1 landscape + Phase 2.5 feasibility data ready → Task B (gap analysis + directions + selection)
+- After Phase 1 landscape table ready → Task B1 (gap analysis + propose 2-3 directions)
+- After Phase 2.5 feasibility scouting complete → Task B2 (auto-select best direction using feasibility data)
 - After Phase 3 deep dive complete → Task C (RQ + theory + Lean 4 proofs + method + experiment)
 - After Phase 4 complete and Lean 4 passes → Task D (write Proposal.md)
 - When state.md shows revision-N → Task E (interpret metareview, revise Proposal)

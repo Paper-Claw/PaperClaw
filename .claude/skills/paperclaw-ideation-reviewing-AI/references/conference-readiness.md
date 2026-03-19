@@ -96,16 +96,9 @@ Is the method well-defined and are the claims defensible?
 
 **Lean 4 Formal Verification Penalty:**
 
-Lean 4 verification is expected for all theoretical claims. Having it does **not** add bonus points; missing or incomplete verification incurs a penalty. See `references/review-protocol.md` "Soundness Score Adjustment" table for the authoritative rules. Summary:
+Lean 4 verification is expected for all theoretical claims. Having it does **not** add bonus points; missing or incomplete verification incurs a penalty.
 
-| Status | Adjustment |
-|--------|------------|
-| FULL PASS (no `sorry`) | No change (verification is expected, not a bonus) |
-| PARTIAL PASS (`sorry` on any sub-goals) | -1 (floor at 1) |
-| FAIL (attempted, failed after retries) | -1 (floor at 1) |
-| SKIPPED — justified + rigorous NL proof (apply conservatively) | No change — **only** when: (a) a careful NL proof audit confirms the proof is sound, AND (b) the justification for skipping formalization is explicit and compelling |
-| SKIPPED — unjustified, or NL proof insufficient | -1 (floor at 1) |
-| ESCALATION (`Lean4Escalation: true` in state.md) | Cap at 2 |
+The authoritative Lean 4 adjustment rules (including the full status/condition/adjustment table, justified-skip criteria, and escalation caps) are defined in `references/review-protocol.md` "Soundness Score Adjustment" section. Refer to that table when scoring Technical Soundness — do not use any other source.
 
 ---
 
