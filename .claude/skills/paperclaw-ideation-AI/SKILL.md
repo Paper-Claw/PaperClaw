@@ -16,35 +16,26 @@ An **auto-pilot**, literature-driven loop that takes a raw research spark and re
 
 ## Workflow Overview
 
-```
-Raw Idea
-  │
-  ▼
-[Phase 0] Capture            — Field Survey + auto-infer 5W1H from raw idea
-  │                            (no user Q&A — decisions logged to questions.md)
-  ▼
-[Phase 1] Literature Probe   — Quick scan: 10-15 papers, map the landscape
-  │
-  ▼
-[Phase 2] Synthesis Report   — Identify gaps, propose 2-3 directions
-  │
-  ▼ (always triggers — no user choice needed)
-[Phase 2.5] Feasibility Scout — Quick-check all directions (2-3 searches each)
-  │                             Auto-select best feasibility profile
-  ▼
-[Phase 3] Deep Dive           — 20-30 focused papers, detailed gap analysis
-  │
-  ▼
-[Phase 4] Sharpen             — SMART RQ, theory, Lean 4 verify, method design, experiment plan
-  │                             ├─ Lean 4 PASS → continue to Method Design
-  │                             ├─ Lean 4 FAIL (fixable) → retry Step 2 (max 10)
-  │                             └─ Lean 4 FAIL (fundamental) → escalate to earlier phase
-  ▼
-[Handoff] Generate draft Proposal.md → submit to independent review panel
-  │
-  ├─ Review feedback received → iterate based on qualitative concerns (max 10 rounds)
-  │
-  └─ Review passed → generate final Proposal (MD_CN, HTML, HTML_CN, BibTeX)
+```mermaid
+flowchart TD
+    RAW[Raw Idea] --> P0[Phase 0: Capture\nField Survey + auto-infer 5W1H]
+    P0 --> P1[Phase 1: Literature Probe\n10-15 papers, map landscape]
+    P1 --> P2[Phase 2: Synthesis\nIdentify gaps, propose 2-3 directions]
+    P2 --> P25[Phase 2.5: Feasibility Scout\nQuick-check all directions\nAuto-select best profile]
+    P25 --> P3[Phase 3: Deep Dive\n20-30 focused papers]
+    P3 --> P4[Phase 4: Sharpen\nSMART RQ + Theory + Method + Experiment]
+    P4 --> LEAN{Lean 4 Verify}
+    LEAN -->|PASS| METHOD[Method Design + Experiment Plan]
+    LEAN -->|FAIL fixable| RETRY[Retry proof\nmax 10 attempts]
+    RETRY --> LEAN
+    LEAN -->|FAIL fundamental| ESCALATE[Escalate to\nearlier phase]
+    ESCALATE -->|Theory flaw| P4
+    ESCALATE -->|Direction flaw| P2
+    METHOD --> HANDOFF[Handoff: Generate draft Proposal.md\nInvoke paperclaw-reviewing-AI]
+    HANDOFF --> REVIEW{Review Panel\n3-5 reviewers}
+    REVIEW -->|FAIL| REVISE[Read metareview.md\nRevise Proposal\nWrite feedback.md]
+    REVISE -->|max 10 rounds| REVIEW
+    REVIEW -->|PASS| FINAL[Generate final outputs:\nProposal_cn.md, HTML, HTML_CN, BibTeX]
 ```
 
 Persist loop state to `./ideation/state.md` so the session can be resumed.
@@ -112,7 +103,7 @@ After reviewing the Proposal and `./ideation/questions.md`, the user can re-invo
 | Phase 4 | `Write` | Generate `.lean` files in `./ideation/lean4/`; log verification results to questions.md |
 | Phase 4 | `Write` | Log SMART RQ and method design decisions to `./ideation/questions.md` |
 | Handoff | `Write` | Generate draft `./Proposal.md`, update state to review-pending |
-| Revision | `Read` | Read `./ideation/review-feedback-N.md` from review panel |
+| Revision | `Read` | Read `./ideation/reviews/iteration-N/metareview.md` from review panel |
 | Proposal | `Write` | Generate final `./Proposal.md`, `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, `./reference.bib` (after review PASS) |
 | Proposal | `WebSearch` | Search for official BibTeX entries (DBLP, Semantic Scholar) for `./reference.bib` |
 | All | `TodoWrite` | Track current phase and progress within each phase |
@@ -517,7 +508,7 @@ export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/l
 
 #### 2.5.6 — Retry Logic
 
-**Max retries:** 5 proof-error attempts per gate iteration. Track in `./ideation/state.md` as `Lean4Attempt: N`.
+**Max retries:** 10 proof-error attempts per gate iteration. Track in `./ideation/state.md` as `Lean4Attempt: N`.
 
 **On Proof Error (counts toward limit):**
 1. Parse Lean 4 error — identify which theorem and proof step failed
@@ -530,7 +521,7 @@ export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/l
 
 **On Syntax Error (does NOT count toward limit):** Fix and retry immediately.
 
-**After 5 failed attempts:**
+**After 10 failed attempts:**
 - If theorem *statement* kept changing across attempts → theory may be unsound → **escalate** (see 2.5.7)
 - If only proof *strategy* failed but statement seems correct → proceed to Step 3 with soundness penalty flag
 
@@ -590,20 +581,44 @@ After Phase 4 is complete, generate `./Proposal.md` (draft version) and hand off
 1. Write `./ideation/state.md` with `Phase: review-pending`
 2. Append to `./ideation/log.md`: "Phase 4 complete. Proposal draft generated. Handing off to review panel."
 3. Output: "Draft Proposal generated. Submitting to independent review panel."
-4. **STOP ideation.** Do NOT evaluate the proposal yourself. Do NOT score it on any dimensions.
+4. **MANDATORY: Invoke the `paperclaw-reviewing-AI` skill immediately.** Do NOT evaluate the proposal yourself. Do NOT score it on any dimensions. The reviewing skill reads `./ideation/state.md`, detects `Phase: review-pending`, and takes over from here.
+
+> **This step is non-negotiable.** The ideation pipeline is incomplete without review. If the reviewing skill is not invoked here, the proposal will never be scored or approved.
 
 You know the target conference's expectations from `references/domain.md` (reviewer priorities, common rejection reasons, what gets accepted). Use that knowledge throughout Phases 0-4 to make the proposal as strong as possible. But you do NOT know how the review panel will score you — maximize quality under uncertainty, just like real researchers submitting to a conference.
 
 ### Revision from Reviewer Feedback
 
-If the review panel returns qualitative feedback at `./ideation/review-feedback-N.md`:
+If the review panel signals revision via `./ideation/state.md` (`Phase: revision-N`), the feedback is at `./ideation/reviews/iteration-N/metareview.md`:
 
-1. Read the feedback file carefully — it contains themes and concerns, NOT numeric scores
+1. Read `./ideation/reviews/iteration-N/metareview.md` carefully — focus on the **Primary Concerns**, **Specific Suggestions**, and **Questions Reviewers Want Addressed** sections. Ignore any numeric scores in the Aggregation Summary header.
 2. Identify the primary concerns raised by reviewers
 3. For each concern, determine which phase to revisit (see `references/iteration-loop.md` for the feedback-to-phase mapping)
 4. Re-run from the earliest affected phase forward
 5. Regenerate `./Proposal.md` draft
-6. Set state to `Phase: review-pending` again
+6. **Write `./ideation/reviews/iteration-N/feedback.md`** documenting the changes made:
+
+```markdown
+# Revision Feedback — Iteration N
+
+## Changes Made to Proposal.md
+
+### Concern 1: [concern title from metareview]
+**What was changed:** [specific section/content modified]
+**How it addresses the concern:** [explanation]
+
+### Concern 2: [concern title]
+**What was changed:** ...
+**How it addresses the concern:** ...
+
+## Phases Revisited
+- [Phase X]: [reason — which concern required it]
+
+## Unresolved Concerns (if any)
+- [concern]: [why it could not be fully addressed and what was done instead]
+```
+
+7. Set state to `Phase: review-pending` and invoke `paperclaw-reviewing-AI` again for the next review round.
 
 The review panel controls the iteration count and pass/fail decision — you simply respond to their feedback and resubmit.
 
@@ -972,6 +987,17 @@ All session data lives under `./ideation/`:
 ├── literature.md ← structured analysis notes from Phase 3 deep dive
 ├── theory.md     ← problem formalization and theoretical analysis from Phase 4
 ├── questions.md  ← auto-pilot decision log (append-only) — source for Proposal Section 9
+├── reviews/              ← review panel records (managed by paperclaw-reviewing-AI)
+│   ├── iteration-1/
+│   │   ├── R1-claude.md      ← individual reviewer files
+│   │   ├── R2-gpt.md
+│   │   ├── R3-gemini.md
+│   │   ├── aggregation.md    ← scores + Lean 4 audit (orchestrator only)
+│   │   ├── metareview.md     ← qualitative feedback (no scores) — ideation reads this
+│   │   └── feedback.md       ← what changes ideation made in response (written after revision)
+│   ├── iteration-2/
+│   │   └── ...
+│   └── ...
 └── lean4/                ← Lean 4 formal verification project
     ├── .elan/            ← local elan installation (toolchains, binaries — NOT committed to git)
     ├── lean-toolchain
@@ -1062,7 +1088,7 @@ Append one entry per completed phase or gate check. Never overwrite. This is the
 
 ### Handoff / Revision (if this was a review handoff or revision)
 **Action:** [Handed off draft Proposal to review panel / Received reviewer feedback / Final Proposal generated]
-**Reviewer Feedback Themes:** [list of qualitative concerns from review-feedback-N.md, if revising]
+**Reviewer Feedback Themes:** [list of qualitative concerns from ./ideation/reviews/iteration-N/metareview.md, if revising]
 **Decision:** [what was chosen — which phases to revisit, or "proceed to final"]
 
 ---

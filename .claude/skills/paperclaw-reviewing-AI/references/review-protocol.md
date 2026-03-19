@@ -65,7 +65,7 @@ The ideation model must NEVER see:
 2. Extract all strengths, weaknesses, and questions
 3. Group weaknesses by theme (not by reviewer or dimension)
 4. Remove all numeric scores and dimension labels
-5. Write synthesized feedback to `./ideation/review-feedback-N.md`
+5. Write synthesized feedback to `./ideation/reviews/iteration-N/metareview.md`
 
 ### Feedback File Format
 ```markdown
@@ -118,7 +118,34 @@ SCORING RUBRIC:
 [Full rubric from conference-readiness.md]
 
 OUTPUT FORMAT:
-[Standard review format]
+Use EXACTLY this structure (the orchestrator will parse scores from it):
+
+## Overall Assessment
+[2-3 sentence summary of the proposal's strengths and weaknesses]
+
+## Scores
+- Novelty: [1-5]/5 — [one sentence justification]
+- Significance: [1-5]/5 — [one sentence justification]
+- Technical Soundness: [1-5]/5 — [one sentence justification]
+- Experimental Feasibility: [1-5]/5 — [one sentence justification]
+
+## Strengths
+1. [strength with specific reference to proposal section]
+2. [strength]
+3. [strength]
+
+## Weaknesses
+1. [weakness with specific evidence from the proposal]
+2. [weakness]
+3. [weakness]
+
+## Questions for Authors
+1. [question]
+2. [question]
+
+## Suggestions for Improvement
+- [actionable suggestion]
+- [actionable suggestion]
 ```
 
 ### Persona-Specific Additions

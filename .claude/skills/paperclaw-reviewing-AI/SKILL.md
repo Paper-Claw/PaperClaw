@@ -211,7 +211,34 @@ Convert reviewer commentary into qualitative improvement guidance. **Strip ALL o
 2. [question]
 ```
 
-Write this to `./ideation/review-feedback-N.md`.
+Write this to `./ideation/reviews/iteration-N/metareview.md` (where N is the current iteration number).
+
+**metareview.md structure:** Qualitative feedback ONLY — no numeric scores, no dimension labels, no pass/fail language. Scores belong exclusively in `aggregation.md`.
+
+```markdown
+# Meta-Review — Iteration N
+
+## Key Strengths Noted by Reviewers
+- [theme 1, with specific citations from reviewers]
+- [theme 2]
+
+## Primary Concerns
+1. [Concern theme]: [synthesized description from multiple reviewers]
+2. [Concern theme]: [synthesized description]
+3. [Concern theme]: [synthesized description]
+
+## Specific Suggestions
+- [actionable suggestion 1]
+- [actionable suggestion 2]
+
+## Questions Reviewers Want Addressed
+1. [question]
+2. [question]
+```
+
+After the gate decision in Step 6, append a single line: `## Gate Result: PASS` or `## Gate Result: FAIL`.
+
+> **Information barrier:** `metareview.md` must NEVER contain numeric scores, rubric dimension names, or threshold language. All quantitative data belongs in `aggregation.md` only. The ideation model reads `metareview.md`; the orchestrator must NOT pass raw reviewer files or `aggregation.md` to the ideation model.
 
 ---
 
@@ -220,12 +247,13 @@ Write this to `./ideation/review-feedback-N.md`.
 ### PASS (median total ≥ 16, no median dim < 3)
 1. Update `./ideation/state.md`: `Phase: Done`
 2. Write the full aggregation report (with scores) to `./ideation/reviews/iteration-N/aggregation.md`
-3. Write `./ideation/review-feedback-N.md` with the gate result: `GATE: PASS`
+3. Append `## Gate Result: PASS` to `./ideation/reviews/iteration-N/metareview.md` (already written in Step 5)
 4. **Explicitly invoke the ideation skill** to generate final output files by passing this instruction:
-   > "The review panel has issued a PASS. Read `./Proposal.md` and generate the three final output files: `./Proposal.html` (English, styled HTML with KaTeX), `./Proposal_cn.html` (Chinese translation, styled HTML with KaTeX), and `./reference.bib` (BibTeX). Follow the HTML rendering rules in the Research Proposal Output section exactly. Do not alter `./Proposal.md`."
-5. **Validate outputs**: after the ideation skill completes, verify all four files exist and are non-empty:
+   > "The review panel has issued a PASS. Read `./Proposal.md` and generate the four final output files: `./Proposal_cn.md` (Chinese translation, Markdown), `./Proposal.html` (English, styled HTML with KaTeX), `./Proposal_cn.html` (Chinese translation, styled HTML with KaTeX), and `./reference.bib` (BibTeX). Follow the HTML rendering rules in the Research Proposal Output section exactly. Do not alter `./Proposal.md`."
+5. **Validate outputs**: after the ideation skill completes, verify all five files exist and are non-empty:
    ```bash
    test -s ./Proposal.md && echo "OK" || echo "MISSING: Proposal.md"
+   test -s ./Proposal_cn.md && echo "OK" || echo "MISSING: Proposal_cn.md"
    test -s ./Proposal.html && echo "OK" || echo "MISSING: Proposal.html"
    test -s ./Proposal_cn.html && echo "OK" || echo "MISSING: Proposal_cn.html"
    test -s ./reference.bib && echo "OK" || echo "MISSING: reference.bib"
@@ -233,18 +261,18 @@ Write this to `./ideation/review-feedback-N.md`.
 6. If any file is missing or empty: re-issue the generation instruction for that specific file only. Repeat up to 2 times.
 
 ### FAIL (below threshold)
-1. Update `./ideation/state.md`: `Phase: revision-N`
-2. Write the qualitative feedback file (scores stripped)
-3. Increment iteration counter
-4. If iteration count < 10: signal the ideation model to revise
+1. Update `./ideation/state.md`: `Phase: revision-N`, increment `Iteration:` field (read current value, +1, write back)
+2. Write `./ideation/reviews/iteration-N/metareview.md` (qualitative feedback only, no scores — see Step 5)
+3. If iteration count < 10: signal the ideation model to revise by passing:
+   > "Review panel feedback for iteration N is at `./ideation/reviews/iteration-N/metareview.md`. Read the Primary Concerns, Specific Suggestions, and Questions sections. Revise `./Proposal.md` to address these concerns, then write `./ideation/reviews/iteration-N/feedback.md` documenting exactly what changes you made and which concerns each change addresses. After writing feedback.md, set state to `Phase: review-pending`."
 5. If iteration count = 10: force-proceed with caveat note
 
 ### Force-Proceed (after 10 iterations)
 1. Update `./ideation/state.md`: `Phase: Done`
-2. Add caveat note to the feedback: "The review panel did not reach consensus on readiness after 10 rounds. The following concerns remain unresolved: [list]"
+2. Add caveat note to `./ideation/reviews/iteration-N/metareview.md`: "The review panel did not reach consensus on readiness after 10 rounds. The following concerns remain unresolved: [list]"
 3. **Explicitly invoke the ideation skill** to generate final output files with caveat by passing this instruction:
-   > "The review panel has exhausted 10 revision rounds without reaching consensus. Read `./Proposal.md` and generate the three final output files: `./Proposal.html`, `./Proposal_cn.html`, and `./reference.bib`. Add the following caveat at the top of Section 9 in all three files: 'NOTE: This proposal did not pass the review gate after 10 rounds. Remaining reviewer concerns: [list from feedback].'"
-4. **Validate outputs** (same bash check as in PASS step 5). Retry up to 2 times if any file is missing.
+   > "The review panel has exhausted 10 revision rounds without reaching consensus. Read `./Proposal.md` and generate the four final output files: `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, and `./reference.bib`. Add the following caveat at the top of Section 9 in all files: 'NOTE: This proposal did not pass the review gate after 10 rounds. Remaining reviewer concerns: [list from metareview].'"
+4. **Validate outputs** (same bash check as in PASS step 5, all 5 files). Retry up to 2 times if any file is missing.
 
 ---
 
