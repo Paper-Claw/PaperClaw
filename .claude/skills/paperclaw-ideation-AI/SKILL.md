@@ -1,60 +1,120 @@
 ---
 name: paperclaw-ideation-AI
-description: Use when the user wants to "brainstorm a research idea", "polish a paper idea", "find a research direction", "identify research gaps", "start a new project", "check if my idea can get into a top conference", or shares any raw research concept that needs refinement. Runs an auto-pilot loop of literature search → synthesis → auto-decision → refinement until the idea reaches top-conference publication quality (target venues defined in references/domain.md). Produces a complete Proposal with all auto-decisions logged for user review. Supports re-running with user overrides.
-version: 1.0.0
+description: >-
+  Use when the user wants to "brainstorm a research idea", "polish a paper idea",
+  "find a research direction", "identify research gaps", "start a new project",
+  "check if my idea can get into a top conference", or shares any raw research
+  concept that needs refinement. Runs an auto-pilot loop of literature search →
+  synthesis → auto-decision → refinement until the idea reaches top-conference
+  publication quality (target venues defined in references/domain.md). Produces a
+  complete Proposal with all auto-decisions logged for user review. Supports
+  re-running with user overrides.
+version: 1.2.0
 ---
 
-# Research Ideation — Iterative Idea Polishing Loop
+# PaperClaw Ideation AI — Iterative Research Idea Polishing Pipeline
 
-An **auto-pilot**, literature-driven loop that takes a raw research spark and refines it through repeated cycles of search, synthesis, and autonomous decision-making until it reaches top-conference publication quality (target venues defined in `references/domain.md`). The entire pipeline runs without user interaction — the user reviews the finished Proposal and can override any auto-decision by re-running.
+An auto-pilot, literature-driven pipeline that takes a raw research spark and refines it through repeated cycles of search, synthesis, and autonomous decision-making until it reaches top-conference publication quality (target venues defined in `references/domain.md`).
 
 ## Core Principle
 
-**Maximize proposal quality under uncertainty.** You know the target conference's expectations from `references/domain.md` (reviewer priorities, common rejection reasons, what gets accepted), but you do NOT know the specific scoring rubric or pass/fail thresholds used by the independent review panel. Work as a real researcher would: make the proposal as strong as possible, then submit for external review. After Phase 4, hand off the draft Proposal to the review panel. If the reviewers return qualitative feedback, iterate based on their concerns. All decisions are made autonomously and logged to `./ideation/questions.md` for post-hoc user review.
+> **Maximize proposal quality under uncertainty.**
+>
+> You know the target conference's expectations from `references/domain.md` (reviewer priorities, common rejection reasons, what gets accepted), but you do NOT know the specific scoring rubric or pass/fail thresholds used by the independent review panel. Work as a real researcher would: make the proposal as strong as possible, then submit for external review. If the reviewers return qualitative feedback, iterate based on their concerns.
+>
+> The entire pipeline runs without user interaction. All decisions are made autonomously and logged to `./ideation/questions.md` for post-hoc user review. The user reviews the finished Proposal and can override any auto-decision by re-running.
 
 ---
 
 ## Workflow Overview
 
-```
-Raw Idea
-  │
-  ▼
-[Phase 0] Capture            — Field Survey + auto-infer 5W1H from raw idea
-  │                            (no user Q&A — decisions logged to questions.md)
-  ▼
-[Phase 1] Literature Probe   — Quick scan: 10-15 papers, map the landscape
-  │
-  ▼
-[Phase 2] Synthesis Report   — Identify gaps, propose 2-3 directions
-  │
-  ▼ (always triggers — no user choice needed)
-[Phase 2.5] Feasibility Scout — Quick-check all directions (2-3 searches each)
-  │                             Auto-select best feasibility profile
-  ▼
-[Phase 3] Deep Dive           — 20-30 focused papers, detailed gap analysis
-  │
-  ▼
-[Phase 4] Sharpen             — SMART RQ, theory, Lean 4 verify, method design, experiment plan
-  │                             ├─ Lean 4 PASS → continue to Method Design
-  │                             ├─ Lean 4 FAIL (fixable) → retry Step 2 (max 10)
-  │                             └─ Lean 4 FAIL (fundamental) → escalate to earlier phase
-  ▼
-[Handoff] Generate draft Proposal.md → submit to independent review panel
-  │
-  ├─ Review feedback received → iterate based on qualitative concerns (max 10 rounds)
-  │
-  └─ Review passed → generate final Proposal (MD_CN, HTML, HTML_CN, BibTeX)
+```mermaid
+flowchart TD
+    RAW[Raw Idea] --> P0[Phase 0: Capture\nField Survey + auto-infer 5W1H]
+    P0 --> P1[Phase 1: Literature Probe\n10-15 papers, map landscape]
+    P1 --> P2[Phase 2: Synthesis\nIdentify gaps, propose 2-3 directions]
+    P2 --> P25[Phase 2.5: Feasibility Scout\nQuick-check all directions\nAuto-select best profile]
+    P25 --> P3[Phase 3: Deep Dive\n20-30 focused papers]
+    P3 --> P4[Phase 4: Sharpen\nSMART RQ + Theory + Method + Experiment]
+    P4 --> LEAN{Lean 4 Verify}
+    LEAN -->|PASS| METHOD[Method Design + Experiment Plan]
+    LEAN -->|FAIL fixable| RETRY[Retry proof\nmax 10 attempts]
+    RETRY --> LEAN
+    LEAN -->|FAIL fundamental| ESCALATE[Escalate to\nearlier phase]
+    ESCALATE -->|Theory flaw| P4
+    ESCALATE -->|Direction flaw| P2
+    METHOD --> HANDOFF[Handoff: Generate draft Proposal.md\nInvoke paperclaw-reviewing-AI]
+    HANDOFF --> REVIEW{Review Panel\n3-5 reviewers}
+    REVIEW -->|FAIL| REVISE[Read metareview.md\nRevise Proposal\nWrite feedback.md]
+    REVISE -->|max 10 rounds| REVIEW
+    REVIEW -->|PASS| FINAL[Generate final outputs:\nProposal_cn.md, HTML, HTML_CN, BibTeX]
 ```
 
-Persist loop state to `./ideation/state.md` so the session can be resumed.
-All auto-decisions are logged to `./ideation/questions.md` for post-hoc review.
+Persist loop state to `./ideation/state.md` so the session can be resumed. All auto-decisions are logged to `./ideation/questions.md` for post-hoc review.
+
+---
+
+## Resume Protocol
+
+When starting a new session, check if `./ideation/state.md` exists:
+
+1. **If exists** → Read state.md to determine current phase and iteration
+2. **Read papers.md** to know which papers have already been retrieved — do not re-search
+3. **Read questions.md** to load all prior auto-decisions
+4. **Resume** from the phase recorded in state.md
+5. **If review-pending or revision-N** → also read `./ideation/reviews/` for review history
+
+If the user wants to restart a phase, they must explicitly say so.
+
+### Override Protocol
+
+After reviewing the Proposal and `./ideation/questions.md`, the user can re-invoke this skill with override instructions:
+
+```
+"重新运行 ideation，修改决策 #2 为 Direction B"
+"Re-run ideation, override decision #3: use contrastive learning instead"
+```
+
+1. Read `./ideation/questions.md` — load all prior auto-decisions
+2. Apply user overrides to the specified decision numbers
+3. Determine the **earliest affected phase** (e.g., overriding direction → Phase 2)
+4. Re-run from that phase forward, keeping unaffected prior decisions
+5. Regenerate all Proposal files with updated Section 9
+
+---
+
+## Working Files
+
+All internal files live under `./ideation/`:
+
+| File | Type | Purpose |
+|------|------|---------|
+| `state.md` | Overwrite | Current phase, iteration, Lean 4 status |
+| `log.md` | Append-only | Timestamped event log across all phases |
+| `papers.md` | Append-only | Index of all papers ever retrieved |
+| `literature.md` | Overwrite | Structured analysis notes from Phase 3 deep dive |
+| `theory.md` | Overwrite | Problem formalization and theoretical analysis from Phase 4 |
+| `questions.md` | Append-only | Auto-pilot decision log — source for Proposal Section 9 |
+| `reviews/` | Directory | Review panel records (managed by paperclaw-reviewing-AI) |
+| `lean4/` | Directory | Lean 4 formal verification project |
+
+Final outputs in project root (`./`):
+
+| File | Format | Language |
+|------|--------|----------|
+| `Proposal.md` | Markdown | English |
+| `Proposal_cn.md` | Markdown | Chinese |
+| `Proposal.html` | HTML | English |
+| `Proposal_cn.html` | HTML | Chinese |
+| `reference.bib` | BibTeX | N/A |
+
+**Update state.md** at: phase start, phase end, Lean 4 attempts, review handoff, revision start.
 
 ---
 
 ## Auto-Pilot Mode
 
-This skill runs in **auto-pilot by default**: the entire pipeline executes without calling `AskUserQuestion`. Every decision point that previously required user input is now handled autonomously and logged to `./ideation/questions.md`.
+This skill runs in **auto-pilot by default**: the entire pipeline executes without calling `AskUserQuestion`. Every decision point is handled autonomously and logged to `./ideation/questions.md`.
 
 ### Auto-Decision Priority
 
@@ -64,34 +124,7 @@ When choosing between options, apply this priority order:
 3. **Low risk** — avoid directions with concurrent work overlap or missing baselines
 4. **Novelty** — prefer fresher angles, but not at the expense of feasibility
 
-### What Gets Auto-Decided
-
-| Decision Point | Original Behavior | Auto-Pilot Behavior |
-|---------------|-------------------|---------------------|
-| Phase 0 Q&A | Ask user 5W1H one-by-one | Auto-infer from raw idea + field survey |
-| Phase 0 summary confirmation | Wait for user OK | Auto-proceed, log to questions.md |
-| Phase 2 direction choice | AskUserQuestion with options | Always trigger Phase 2.5 Feasibility Scout |
-| Phase 2.5 confirmation | Wait for user to confirm recommendation | Auto-select best feasibility profile |
-| Phase 4 RQ/method confirmation | AskUserQuestion | Auto-proceed, log to questions.md |
-| Phase 4 Lean 4 verification | N/A (new) | Auto-retry on failure (max 5), auto-escalate if fundamental flaw |
-| Proposal handoff | N/A | Generate draft Proposal.md, set state to review-pending, await external review |
-| Revision from feedback | N/A | Read qualitative feedback from review panel, iterate on weakest areas |
-
-### Resume with User Overrides
-
-After reviewing the Proposal and `./ideation/questions.md`, the user can re-invoke this skill with override instructions:
-
-```
-"重新运行 ideation，修改决策 #2 为 Direction B"
-"Re-run ideation, override decision #3: use contrastive learning instead"
-```
-
-**Override protocol:**
-1. Read `./ideation/questions.md` — load all prior auto-decisions
-2. Apply user overrides to the specified decision numbers
-3. Determine the **earliest affected phase** (e.g., overriding direction → Phase 2)
-4. Re-run from that phase forward, keeping unaffected prior decisions
-5. Regenerate all three Proposal files with updated Section 9
+See **Appendix A** for the full auto-decision table showing what gets auto-decided at each phase.
 
 ---
 
@@ -112,9 +145,9 @@ After reviewing the Proposal and `./ideation/questions.md`, the user can re-invo
 | Phase 4 | `Write` | Generate `.lean` files in `./ideation/lean4/`; log verification results to questions.md |
 | Phase 4 | `Write` | Log SMART RQ and method design decisions to `./ideation/questions.md` |
 | Handoff | `Write` | Generate draft `./Proposal.md`, update state to review-pending |
-| Revision | `Read` | Read `./ideation/review-feedback-N.md` from review panel |
-| Proposal | `Write` | Generate final `./Proposal.md`, `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, `./reference.bib` (after review PASS) |
-| Proposal | `WebSearch` | Search for official BibTeX entries (DBLP, Semantic Scholar) for `./reference.bib` |
+| Revision | `Read` | Read `./ideation/reviews/iteration-N/metareview.md` from review panel |
+| Output | `Write` | Generate final `./Proposal.md`, `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, `./reference.bib` (after review PASS) |
+| Output | `WebSearch` | Search for official BibTeX entries (DBLP, Semantic Scholar) for `./reference.bib` |
 | All | `TodoWrite` | Track current phase and progress within each phase |
 
 **WebSearch best practices:**
@@ -126,42 +159,15 @@ After reviewing the Proposal and `./ideation/questions.md`, the user can re-invo
 
 ---
 
-## Two Persistent Mental Frameworks
-
-These two frameworks apply at **every phase**, not just Phase 0. Revisit them actively after each new piece of evidence (a paper, reviewer feedback, a feasibility finding).
-
-### 5W1H — Continuously Updated
-
-The 5W1H is not a one-time questionnaire. Treat it as a living model of the idea that gets sharper with each iteration:
-
-| Dimension | What to re-examine after new evidence |
-|-----------|--------------------------------------|
-| **What** | Is the problem statement still precise? Did new papers reveal a better framing? |
-| **Why** | Is the motivation still the strongest available? Did we find a more compelling failure case? |
-| **Who** | Has the target community or application user changed with the chosen direction? |
-| **When** | Is there new concurrent work that changes the timing? |
-| **Where** | Has the domain or application scenario become more or less promising? |
-| **How** | Is the method intuition still the best fit given what we now know from the literature? |
-
-If any dimension weakens after new evidence, flag it explicitly and address it before moving to the next phase.
-
-### First Principles Thinking — Always On
-
-At every decision point, strip away assumptions and reason from fundamentals:
-
-1. **Decompose the problem** — break the research question into its most basic components. What is the core tension or trade-off that makes this hard?
-2. **Challenge inherited assumptions** — question every "everyone does it this way" claim. Why does the field use this method? Is the reason still valid?
-3. **Rebuild from scratch** — given only the fundamental constraints (data, compute, physics, math), what is the most natural solution? Compare it to what the field actually does.
-4. **Identify the real bottleneck** — what is the single constraint that, if removed, would make this problem trivial? That constraint is often the most valuable thing to attack.
-5. **Avoid analogy-driven reasoning** — "this worked in domain X so it should work here" is a hypothesis, not a justification. Ground every claim in first principles before committing to a direction.
-
----
-
 ## Phase 0: Capture the Spark
 
-**Goal:** Understand the raw idea well enough to search meaningfully. Do a field survey first, then present a background briefing, then auto-infer all 5W1H dimensions.
+### Goal
 
-### Step 0 — Field Survey (silent research, before any user interaction)
+Understand the raw idea well enough to search meaningfully. Do a field survey first, then present a background briefing, then auto-infer all 5W1H dimensions.
+
+### Steps
+
+#### Step 0.1: Field Survey (silent research, before any user interaction)
 
 Before posing the first question, run 3-5 fast WebSearch queries to build a solid grasp of the field:
 - What are the dominant paradigms and open problems in this area?
@@ -172,9 +178,9 @@ Before posing the first question, run 3-5 fast WebSearch queries to build a soli
 
 Example search queries — see `references/domain.md` "Example Search Queries" section for domain-appropriate templates.
 
-### Step 1 — Background Briefing (MUST present to user before auto-inference)
+#### Step 0.2: Background Briefing (MUST present to user before auto-inference)
 
-**This step is mandatory.** After completing the field survey, write and present a structured background briefing to the user. The briefing educates the user on the current state of the field and provides context for the auto-inferred decisions that follow. The briefing should be written in the user's language and cover:
+**This step is mandatory.** After completing the field survey, write and present a structured background briefing to the user. The briefing educates the user on the current state of the field and provides context for the auto-inferred decisions that follow. Write in the user's language.
 
 ```markdown
 ## 🔍 Field Background Briefing: [Topic Area]
@@ -201,25 +207,11 @@ List 3-5 concrete open questions, each with a brief explanation of why it matter
 landscape above. This is a preliminary assessment — we'll refine it together.]
 ```
 
-**Briefing quality requirements:**
-- Must be **substantive and educational**, not a vague overview — include specific paper names, method names, numbers, and dates
-- Must help the user understand the field well enough to answer the follow-up questions intelligently
-- Must explicitly connect the user's raw idea to the landscape (the "Where Your Idea Fits" section)
-- Length: 400-800 words (enough to be informative, not so long it's overwhelming)
+**Quality requirements:** Must be substantive (specific paper names, method names, numbers, dates), 400-800 words, and explicitly connect the user's raw idea to the landscape. After presenting, proceed immediately to auto-inference.
 
-After presenting the briefing, proceed immediately to auto-inference (no pause needed in auto-pilot mode).
+#### Step 0.3: Auto-Infer 5W1H (no user interaction)
 
-### Step 2 — Auto-Infer 5W1H (no user interaction)
-
-**In auto-pilot mode, do NOT call `AskUserQuestion`.** Instead, infer all 5W1H dimensions from the raw idea + field survey results.
-
-**Auto-inference rules:**
-- For each 5W1H dimension, synthesize the best answer from: (1) the user's raw idea text, (2) the field survey findings, (3) common sense about the research landscape
-- Mark each inference with a **confidence level** (High / Medium / Low) — Low confidence items are flagged as priority override candidates
-- Use field survey findings to fill gaps — e.g., if the user didn't specify a target venue, infer from the topic area; if no method preference, infer from dominant paradigms
-- Prefer conservative, feasible choices when information is ambiguous
-
-**5W1H checklist** (continuously revisited throughout all phases — see below):
+Infer all 5W1H dimensions from the raw idea + field survey results. For each dimension, synthesize the best answer from: (1) the user's raw idea text, (2) the field survey findings, (3) common sense about the research landscape.
 
 | Dimension | Core Question | Auto-Inference Source |
 |-----------|--------------|---------------------|
@@ -230,20 +222,29 @@ After presenting the briefing, proceed immediately to auto-inference (no pause n
 | **Where** | Domain or application scenario? | User's raw idea + field survey: standard benchmarks and datasets |
 | **How** | Method or technical approach? | Field survey: dominant paradigms + identified gaps → most promising approach |
 
-**Log to `./ideation/questions.md`:** For each 5W1H dimension, record the question, context, auto-inferred answer, reasoning, and confidence level.
+Mark each inference with a **confidence level** (High / Medium / Low). Prefer conservative, feasible choices when information is ambiguous.
 
-**Output of Phase 0:** A 1-paragraph idea summary presented to the user as text output, then auto-proceed to Phase 1.
+**Log to `./ideation/questions.md`:** For each 5W1H dimension, record question, context, auto-inferred answer, reasoning, and confidence.
 
-**Output quality checklist:**
-- [ ] All 6 dimensions (What/Why/Who/When/Where/How) are addressed, even if some are tentative
-- [ ] The summary is specific enough to generate meaningful search queries
-- [ ] Each auto-inference is logged to `./ideation/questions.md` with confidence level
+**Output:** A 1-paragraph idea summary presented to the user as text output, then auto-proceed to Phase 1.
+
+### Completion Criteria
+
+- [x] Field survey completed (3-5 WebSearches)
+- [x] Background briefing presented to user
+- [x] All 6 dimensions (What/Why/Who/When/Where/How) addressed with confidence levels
+- [x] Summary is specific enough to generate meaningful search queries
+- [x] Each auto-inference logged to `./ideation/questions.md`
 
 ---
 
 ## Phase 1: Literature Probe
 
-**Goal:** Map the existing landscape quickly. Do not go deep yet — coverage matters more than depth.
+### Goal
+
+Map the existing landscape quickly. Coverage matters more than depth — do not go deep yet.
+
+### Steps
 
 **Search targets:**
 - Databases and arXiv categories listed in `references/domain.md` (choose based on topic)
@@ -264,17 +265,22 @@ After presenting the briefing, proceed immediately to auto-inference (no pause n
 
 Present this table to the user as Phase 1 output before continuing.
 
-**Output quality checklist:**
-- [ ] Landscape table contains 10-15 papers (or 5-8 for niche topics — see `references/iteration-loop.md`)
-- [ ] Papers span the last 3 years and include recent SOTA
-- [ ] At least 2 different method families are represented
-- [ ] Key limitations column is filled for every paper (not just "N/A")
+### Completion Criteria
+
+- [x] Landscape table contains 10-15 papers (or 5-8 for niche topics — see `references/iteration-loop.md`)
+- [x] Papers span the last 3 years and include recent SOTA
+- [x] At least 2 different method families represented
+- [x] Key limitations column filled for every paper
 
 ---
 
 ## Phase 2: Synthesis & Direction Proposals
 
-**Goal:** Identify gaps and propose 2-3 concrete research directions.
+### Goal
+
+Identify gaps and propose 2-3 concrete research directions.
+
+### Steps
 
 **Gap analysis** (use `references/gap-analysis-guide.md`):
 - Literature gaps: topics not yet studied
@@ -282,8 +288,7 @@ Present this table to the user as Phase 1 output before continuing.
 - Application gaps: theory-to-practice transfer opportunities
 - Temporal gaps: new capabilities or demands not yet addressed
 
-**Proposal format (from brainstorming skill):**
-Always propose **exactly 2-3 directions** with explicit trade-offs. Lead with your recommended option and explain why. Never commit to one direction without presenting alternatives.
+**Proposal format:** Always propose **exactly 2-3 directions** with explicit trade-offs. Lead with your recommended option and explain why.
 
 ```
 Direction A: [Title]
@@ -304,23 +309,28 @@ Direction C: [Title]
 My recommendation: Direction [X], because ...
 ```
 
-**Auto-pilot behavior:** After proposing 2-3 directions, **always proceed to Phase 2.5 Feasibility Scout** to validate all directions before committing. Do NOT call `AskUserQuestion`. Log the proposed directions and their trade-offs to `./ideation/questions.md`.
+Log the proposed directions and their trade-offs to `./ideation/questions.md`, then proceed to Phase 2.5.
 
-**Output quality checklist:**
-- [ ] Exactly 2-3 directions proposed (not 1, not 4+)
-- [ ] Each direction has explicit trade-offs (risk vs. reward, novelty vs. feasibility)
-- [ ] Each direction includes feasibility signals (datasets, baselines, compute)
-- [ ] A clear recommendation is given with reasoning
-- [ ] Gap analysis references specific papers from Phase 1 landscape table
-- [ ] All directions and trade-offs are logged to `./ideation/questions.md`
+### Completion Criteria
+
+- [x] Exactly 2-3 directions proposed (not 1, not 4+)
+- [x] Each direction has explicit trade-offs (risk vs. reward, novelty vs. feasibility)
+- [x] Each direction includes feasibility signals (datasets, baselines, compute)
+- [x] A clear recommendation given with reasoning
+- [x] Gap analysis references specific papers from Phase 1 landscape table
+- [x] All directions and trade-offs logged to `./ideation/questions.md`
 
 ---
 
-## Phase 2.5: Feasibility Scout (always triggered in auto-pilot)
+## Phase 2.5: Feasibility Scout
+
+### Goal
+
+Quickly validate the feasibility of all 2-3 proposed directions before committing to the expensive Phase 3 deep-dive. Auto-select the direction with the best feasibility-significance profile.
 
 **Trigger:** Always runs after Phase 2 in auto-pilot mode. This replaces the previous user choice step.
 
-**Goal:** Quickly validate the feasibility of all 2-3 proposed directions before committing to the expensive Phase 3 deep-dive. Auto-select the direction with the best feasibility-significance profile.
+### Steps
 
 **For each proposed direction, run 2-3 targeted WebSearches to check:**
 1. **Dataset availability** — Are there public, commonly-used datasets for this direction? Are they accessible?
@@ -346,24 +356,26 @@ My recommendation: Direction [X], because ...
 **Eliminated:** Direction [Z] has a critical blocker: [specific issue].
 ```
 
-**Auto-pilot behavior after producing the table:**
-- **Auto-select** the direction with the best feasibility profile, prioritizing: feasibility > significance > low concurrent-work risk > novelty
-- Log the full Feasibility Comparison Table, the selected direction, runner-up, and eliminated directions to `./ideation/questions.md`
-- Proceed directly to Phase 3 with the selected direction
+**Auto-select** the direction with the best feasibility profile, prioritizing: feasibility > significance > low concurrent-work risk > novelty. Log the full comparison table, selected direction, runner-up, and eliminated directions to `./ideation/questions.md`. Proceed directly to Phase 3.
 
-**Output quality checklist:**
-- [ ] All proposed directions are scouted (not just the recommended one)
-- [ ] Each feasibility dimension has specific evidence (paper names, dataset names, code links), not just ✅/❌
-- [ ] A clear recommendation is given with reasoning tied to the feasibility findings
-- [ ] Full comparison table and selection rationale are logged to `./ideation/questions.md`
+**Cost budget:** ~6-9 WebSearches total (2-3 per direction).
 
-**Cost budget:** ~6-9 WebSearches total (2-3 per direction). This is much cheaper than a full Phase 3 deep-dive (20-30 papers) on the wrong path.
+### Completion Criteria
+
+- [x] All proposed directions scouted (not just the recommended one)
+- [x] Each feasibility dimension has specific evidence (paper names, dataset names, code links)
+- [x] A clear recommendation given with reasoning tied to feasibility findings
+- [x] Full comparison table and selection rationale logged to `./ideation/questions.md`
 
 ---
 
 ## Phase 3: Deep Dive
 
-**Goal:** Build a thorough literature foundation for the chosen direction.
+### Goal
+
+Build a thorough literature foundation for the chosen direction.
+
+### Steps
 
 **Search targets:** 20-30 papers specifically on the chosen direction.
 
@@ -374,19 +386,24 @@ My recommendation: Direction [X], because ...
 
 Save to `./ideation/literature.md`.
 
-**Output quality checklist:**
-- [ ] 20-30 papers collected, focused specifically on the chosen direction
-- [ ] Comparison matrix covers methods, datasets, metrics, and limitations
-- [ ] Gap card is specific enough to directly inform a Related Work section
-- [ ] 3-5 baseline candidates identified with available code/reproducible results
+### Completion Criteria
+
+- [x] 20-30 papers collected, focused specifically on the chosen direction
+- [x] Comparison matrix covers methods, datasets, metrics, and limitations
+- [x] Gap card is specific enough to directly inform a Related Work section
+- [x] 3-5 baseline candidates identified with available code/reproducible results
 
 ---
 
 ## Phase 4: Sharpen the Research Question
 
-**Goal:** Produce a precise, SMART research question, a theoretical foundation, and a detailed experimental plan.
+### Goal
 
-### Step 1 — SMART Research Question
+Produce a precise, SMART research question, a theoretical foundation with formal verification, and a detailed experimental plan.
+
+### Steps
+
+#### Step 4.1: SMART Research Question
 
 Use `references/research-question-formulation.md`:
 - **Specific**: name the method, task, and scenario explicitly
@@ -395,60 +412,52 @@ Use `references/research-question-formulation.md`:
 - **Relevant**: articulate academic and practical value
 - **Time-bound**: estimate 3-month and 6-month milestones
 
-### Step 2 — Problem Formalization & Theoretical Analysis
+#### Step 4.2: Problem Formalization & Theoretical Analysis
 
 Formalize the research problem mathematically and build theoretical justification for the proposed approach. Save to `./ideation/theory.md`.
 
 **Required content:**
 1. **Problem formalization** — define the problem with precise mathematical notation (input space, output space, objective function, constraints)
 2. **Mathematical model** — formulate the proposed approach as a formal optimization or learning problem
-3. **Theoretical justification** — prove or argue why the proposed solution is superior to existing methods. Include any of the following that apply:
-   - Theorems with proofs (e.g., convergence guarantees, approximation bounds)
+3. **Theoretical justification** — prove or argue why the proposed solution is superior to existing methods. Include any applicable:
+   - Theorems with proofs (convergence guarantees, approximation bounds)
    - Generalization bounds (PAC-learning, Rademacher complexity, etc.)
    - Convergence rate analysis (optimization perspective)
    - Computational complexity analysis
    - Information-theoretic arguments (lower bounds, capacity)
 4. **Key assumptions** — explicitly state all assumptions required for the theoretical results to hold
 
-### Step 2.5 — Lean 4 Formal Verification
+#### Step 4.3: Lean 4 Formal Verification
 
-After generating `./ideation/theory.md`, formally verify key theoretical claims using Lean 4. This step creates a hard gate: if the core theorems cannot be machine-verified, the pipeline must fix the theory before proceeding to method design.
+After generating `./ideation/theory.md`, formally verify key theoretical claims using Lean 4. This step creates a hard gate: if the core theorems cannot be machine-verified, the pipeline must fix the theory before proceeding.
 
-#### 2.5.1 — Local Lean 4 Environment Setup
+##### 4.3.1 — Local Lean 4 Environment Setup
 
-**Prefer system-level Lean 4 if available.** If the system already has `lean` and `lake` on PATH with cached Mathlib, use them directly — this avoids slow re-downloads and leverages pre-cached dependencies.
+**Prefer system-level Lean 4 if available.** If `lean --version` and `lake --version` succeed, use system Lean 4 directly. Otherwise, install locally:
 
-**Setup priority order:**
+```bash
+export ELAN_HOME="$(pwd)/ideation/lean4/.elan"
+curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | ELAN_HOME="$(pwd)/ideation/lean4/.elan" sh -s -- -y --default-toolchain none
+export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH"
+```
 
-1. **System Lean 4 + cached Mathlib** (fastest): Check if `lean --version` and `lake --version` succeed. If yes, use system Lean 4 directly — no local installation needed. Initialize the project in `./ideation/lean4/` and run `lake exe cache get` to use the system's Mathlib cache.
-
-2. **Local elan installation** (fallback if no system Lean 4):
-   ```bash
-   export ELAN_HOME="$(pwd)/ideation/lean4/.elan"
-   curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | ELAN_HOME="$(pwd)/ideation/lean4/.elan" sh -s -- -y --default-toolchain none
-   export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH"
-   ```
-
-**Project initialization** (either path):
+**Project initialization:**
 ```bash
 mkdir -p ./ideation/lean4 && cd ./ideation/lean4
 echo "leanprover/lean4:v4.18.0-rc1" > lean-toolchain
 lake init IdeationProofs
 ```
 
-If Mathlib is needed, add it to `lakefile.lean` and run:
-```bash
-cd ./ideation/lean4 && lake update && lake exe cache get
-```
+If Mathlib is needed, add it to `lakefile.lean` and run `lake update && lake exe cache get`.
 
-**On subsequent runs:** Check `./ideation/lean4/lakefile.lean` exists. If yes, just run `lake build` — no setup needed.
+**On subsequent runs:** Check `./ideation/lean4/lakefile.lean` exists. If yes, just run `lake build`.
 
 **If using local elan, all Bash commands MUST prefix with:**
 ```bash
 export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH" &&
 ```
 
-#### 2.5.2 — Identify Formalizable Claims
+##### 4.3.2 — Identify Formalizable Claims
 
 Scan `./ideation/theory.md` and classify each theoretical claim:
 
@@ -465,10 +474,10 @@ Scan `./ideation/theory.md` and classify each theoretical claim:
 **Rules:**
 - Only formalize claims marked "Yes" or "Partially"
 - For "Partially" formalizable: formalize structure, use `sorry` for empirical sub-goals, document why
-- **Lean 4 verification is MANDATORY for all theoretical claims.** If theory.md contains ANY theorem, proposition, lemma, convergence claim, bound, or complexity claim, you MUST attempt Lean 4 formalization. Do NOT self-evaluate whether to skip — the independent review panel will audit whether your theoretical claims warranted formal verification. If you skip verification for claims that should have been verified, reviewers will flag this as a weakness.
-- For purely empirical work with zero formalizable claims: still log to questions.md that no formalizable claims exist, with evidence (list the claims in theory.md and explain why each is empirical/non-formalizable)
+- **Lean 4 verification is MANDATORY for all theoretical claims.** If theory.md contains ANY theorem, proposition, lemma, convergence claim, bound, or complexity claim, you MUST attempt formalization. The independent review panel will audit whether theoretical claims warranted formal verification.
+- For purely empirical work with zero formalizable claims: log to questions.md that no formalizable claims exist, with evidence (list the claims in theory.md and explain why each is empirical/non-formalizable)
 
-#### 2.5.3 — Generate Lean 4 Code
+##### 4.3.3 — Generate Lean 4 Code
 
 For each formalizable claim, create a `.lean` file in `./ideation/lean4/IdeationProofs/`:
 
@@ -495,9 +504,9 @@ theorem [theorem_name] : [formal_statement] := by
 - Import from Mathlib for standard math objects (metric spaces, norms, probability, measure theory)
 - Prefer simple tactic proofs (`simp`, `ring`, `omega`, `linarith`, `norm_num`) over term-mode
 - Every `sorry` must have a comment explaining why it cannot be proven at this stage
-- Register new files in `./ideation/lean4/IdeationProofs.lean` (the root file that imports all modules)
+- Register new files in `./ideation/lean4/IdeationProofs.lean` (root file that imports all modules)
 
-#### 2.5.4 — Compile and Check
+##### 4.3.4 — Compile and Check
 
 ```bash
 export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/lean4/.elan/bin:$PATH" && cd ./ideation/lean4 && lake build
@@ -505,19 +514,19 @@ export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/l
 
 **Bash timeout:** 300000ms (5 minutes). First build with Mathlib can be slow.
 
-#### 2.5.5 — Result Classification
+##### 4.3.5 — Result Classification
 
 | Result | Classification | Action |
 |--------|---------------|--------|
-| Build succeeds, no sorry | **FULL PASS** | Proceed to Step 3. Log success to questions.md. |
-| Build succeeds, sorry on empirical sub-goals only | **PARTIAL PASS** | Proceed to Step 3. Log sorry'd items to questions.md. |
+| Build succeeds, no sorry | **FULL PASS** | Proceed to Step 4.4. Log success to questions.md. |
+| Build succeeds, sorry on empirical sub-goals only | **PARTIAL PASS** | Proceed to Step 4.4. Log sorry'd items to questions.md. |
 | Build fails: type mismatch / tactic failure | **Proof Error** | Analyze error → retry (counts toward limit). |
 | Build fails: unknown identifier / import error | **Syntax Error** | Fix imports/definitions → retry (does NOT count toward limit). |
 | Build fails: timeout / OOM | **Resource Error** | Simplify theorem → retry (counts toward limit). |
 
-#### 2.5.6 — Retry Logic
+##### 4.3.6 — Retry Logic
 
-**Max retries:** 5 proof-error attempts per gate iteration. Track in `./ideation/state.md` as `Lean4Attempt: N`.
+**Max retries:** 10 proof-error attempts per gate iteration. Track in `./ideation/state.md` as `Lean4Attempt: N`.
 
 **On Proof Error (counts toward limit):**
 1. Parse Lean 4 error — identify which theorem and proof step failed
@@ -526,26 +535,28 @@ export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/l
    - **Wrong theorem statement** → theory.md claim may be incorrect → update theory.md, regenerate .lean
    - **Missing lemma** → add intermediate lemma and retry
 3. Log error, diagnosis, and fix plan to `./ideation/questions.md`
-4. Retry from step 2.5.3
+4. Retry from step 4.3.3
 
 **On Syntax Error (does NOT count toward limit):** Fix and retry immediately.
 
-**After 5 failed attempts:**
-- If theorem *statement* kept changing across attempts → theory may be unsound → **escalate** (see 2.5.7)
-- If only proof *strategy* failed but statement seems correct → proceed to Step 3 with soundness penalty flag
+**Early escalation (at any point):** If retries reveal the **approach itself is flawed** (not just a proof difficulty) — e.g., theorem statements keep changing across attempts — escalate immediately (see 4.3.7). This can happen at any retry count.
 
-#### 2.5.7 — Escalation (Fundamental Flaw Detected)
+**After 10 failed attempts:**
+- If theorem *statement* kept changing → theory may be unsound → **escalate** (see 4.3.7)
+- If only proof *strategy* failed but statement seems correct → proceed to Step 4.4 with soundness penalty flag
 
-If 5 retries reveal the **approach itself is flawed** (not just a proof difficulty):
+##### 4.3.7 — Escalation (Fundamental Flaw Detected)
+
+If retries reveal a **fundamental flaw** in the approach (not just proof difficulty):
 1. Log to questions.md: "Lean 4 verification revealed fundamental flaw: [description]"
 2. Set `Lean4Escalation: true` in `./ideation/state.md`
-3. Do NOT proceed to Step 3. Instead loop back to:
-   - **Phase 4 Step 2** — if formalization needs rethinking (weaken assumptions, change bounds)
+3. Do NOT proceed to Step 4.4. Instead loop back to:
+   - **Phase 4 Step 4.2** — if formalization needs rethinking (weaken assumptions, change bounds)
    - **Phase 3** — if gap analysis needs revision (the approach itself is wrong)
    - **Phase 2** — if the direction is fundamentally unsound
 4. This escalation is separate from the Gate loop-back — it happens within Phase 4 itself
 
-### Step 3 — Method Design
+#### Step 4.4: Method Design
 
 Describe the proposed method in detail. This should be concrete enough to serve as a blueprint for implementation:
 - Architecture or algorithm overview (with pseudocode or diagram if applicable)
@@ -553,7 +564,7 @@ Describe the proposed method in detail. This should be concrete enough to serve 
 - Training/inference procedure
 - How the method addresses the identified gap
 
-### Step 4 — Experimental Plan
+#### Step 4.5: Experimental Plan
 
 Design a comprehensive experimental plan:
 - Datasets (with sizes, splits, preprocessing)
@@ -565,23 +576,26 @@ Design a comprehensive experimental plan:
   - Analysis experiments (visualization, case studies, sensitivity analysis)
 - Expected results (what does "better" look like, quantitatively?)
 
-**Output quality checklist:**
-- [ ] Research question satisfies all 5 SMART dimensions
-- [ ] Problem is formally defined with mathematical notation
-- [ ] At least one theoretical result (theorem, bound, or formal argument) is provided
-- [ ] Formalizable claims from theory.md are identified and classified
-- [ ] Lean 4 project exists in `./ideation/lean4/` (or skip justified for purely empirical work)
-- [ ] All formalizable theorems have corresponding `.lean` files
-- [ ] `lake build` passes (full or partial pass with documented sorry items)
-- [ ] Every Lean 4 attempt is logged to `./ideation/questions.md`
-- [ ] Method description names specific techniques with enough detail for implementation
-- [ ] At least 1 dataset and 1 metric are named explicitly
-- [ ] Experimental plan includes main comparison, ablation, and analysis experiments
-- [ ] Expected result is quantifiable or clearly falsifiable
+### Completion Criteria
+
+- [x] Research question satisfies all 5 SMART dimensions
+- [x] Problem formally defined with mathematical notation
+- [x] At least one theoretical result (theorem, bound, or formal argument) provided
+- [x] Formalizable claims from theory.md identified and classified
+- [x] Lean 4 project exists in `./ideation/lean4/` (or skip justified for purely empirical work)
+- [x] All formalizable theorems have corresponding `.lean` files
+- [x] `lake build` passes (full or partial pass with documented sorry items)
+- [x] Every Lean 4 attempt logged to `./ideation/questions.md`
+- [x] Method description names specific techniques with enough detail for implementation
+- [x] At least 1 dataset and 1 metric named explicitly
+- [x] Experimental plan includes main comparison, ablation, and analysis experiments
+- [x] Expected result is quantifiable or clearly falsifiable
 
 ---
 
-## Proposal Handoff
+## Handoff & Review Loop
+
+### Proposal Handoff
 
 After Phase 4 is complete, generate `./Proposal.md` (draft version) and hand off to the independent review panel.
 
@@ -590,20 +604,52 @@ After Phase 4 is complete, generate `./Proposal.md` (draft version) and hand off
 1. Write `./ideation/state.md` with `Phase: review-pending`
 2. Append to `./ideation/log.md`: "Phase 4 complete. Proposal draft generated. Handing off to review panel."
 3. Output: "Draft Proposal generated. Submitting to independent review panel."
-4. **STOP ideation.** Do NOT evaluate the proposal yourself. Do NOT score it on any dimensions.
+4. **MANDATORY: Invoke the `paperclaw-reviewing-AI` skill immediately.** Do NOT evaluate the proposal yourself. Do NOT score it on any dimensions. The reviewing skill reads `./ideation/state.md`, detects `Phase: review-pending`, and takes over.
 
-You know the target conference's expectations from `references/domain.md` (reviewer priorities, common rejection reasons, what gets accepted). Use that knowledge throughout Phases 0-4 to make the proposal as strong as possible. But you do NOT know how the review panel will score you — maximize quality under uncertainty, just like real researchers submitting to a conference.
+> **This step is non-negotiable.** The ideation pipeline is incomplete without review. If the reviewing skill is not invoked here, the proposal will never be scored or approved.
+
+### Final Output Generation (invoked by reviewing skill after PASS)
+
+When invoked by the reviewing skill with an instruction to generate final output files (after review PASS or force-proceed), skip all phases and go directly to the **Research Proposal Output** section below. Read `./Proposal.md` and generate:
+- `./Proposal_cn.md` — Chinese translation
+- `./Proposal.html` — English, styled HTML with KaTeX
+- `./Proposal_cn.html` — Chinese, styled HTML with KaTeX
+- `./reference.bib` — BibTeX entries for all cited papers
+
+Do NOT alter `./Proposal.md`. Follow the rendering rules in the Research Proposal Output section exactly.
 
 ### Revision from Reviewer Feedback
 
-If the review panel returns qualitative feedback at `./ideation/review-feedback-N.md`:
+If the review panel signals revision via `./ideation/state.md` (`Phase: revision-N`), the feedback is at `./ideation/reviews/iteration-N/metareview.md`:
 
-1. Read the feedback file carefully — it contains themes and concerns, NOT numeric scores
+1. Read `./ideation/reviews/iteration-N/metareview.md` carefully — focus on the **Primary Concerns**, **Specific Suggestions**, and **Questions to Address in Revision** sections. The metareview should contain only qualitative feedback (no numeric scores). If any numeric scores appear, disregard them — they should not be present.
 2. Identify the primary concerns raised by reviewers
 3. For each concern, determine which phase to revisit (see `references/iteration-loop.md` for the feedback-to-phase mapping)
 4. Re-run from the earliest affected phase forward
 5. Regenerate `./Proposal.md` draft
-6. Set state to `Phase: review-pending` again
+6. **Write `./ideation/reviews/iteration-N/feedback.md`** documenting the changes made:
+
+```markdown
+# Revision Feedback — Iteration N
+
+## Changes Made to Proposal.md
+
+### Concern 1: [concern title from metareview]
+**What was changed:** [specific section/content modified]
+**How it addresses the concern:** [explanation]
+
+### Concern 2: [concern title]
+**What was changed:** ...
+**How it addresses the concern:** ...
+
+## Phases Revisited
+- [Phase X]: [reason — which concern required it]
+
+## Unresolved Concerns (if any)
+- [concern]: [why it could not be fully addressed and what was done instead]
+```
+
+7. Set state to `Phase: review-pending` and invoke `paperclaw-reviewing-AI` again for the next review round.
 
 The review panel controls the iteration count and pass/fail decision — you simply respond to their feedback and resubmit.
 
@@ -613,7 +659,7 @@ The review panel controls the iteration count and pass/fail decision — you sim
 
 Generated after the independent review panel signals PASS (or after max iterations with caveat). The initial draft `./Proposal.md` is generated at the end of Phase 4 for review; the final CN/HTML/BibTeX files are generated only after the review panel approves.
 
-**Five output files are produced:**
+**Five output files:**
 
 | File | Format | Language | Purpose |
 |------|--------|----------|---------|
@@ -623,50 +669,11 @@ Generated after the independent review panel signals PASS (or after max iteratio
 | `./Proposal_cn.html` | HTML | Chinese | Chinese translation for local collaboration |
 | `./reference.bib` | BibTeX | N/A | BibTeX entries for all cited papers |
 
-`Proposal_cn.md` is a direct Chinese translation of `Proposal.md`. Keep all method names, dataset names, mathematical notation, and citations in English. Use parenthetical English for key technical terms, e.g., "消融实验 (Ablation Study)". All five Proposal files share the same 10-section structure (Sections 1-8 are content; Section 9 is the auto-pilot decision log; Section 10 is the reference list). The HTML files should include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
-
-### HTML-Specific Rendering Rules
-
-The HTML files (`Proposal.html` and `Proposal_cn.html`) must use `<details>` and `<summary>` elements for the following content:
-
-1. **Detailed proofs** (Section 4): Each theorem's detailed proof is wrapped in a collapsible block. The proof outline remains visible (not collapsed). Only the detailed proof is collapsible. Default state: **collapsed**.
-   ```html
-   <details>
-   <summary>Detailed Proof of Theorem N</summary>
-   <div class="proof">[Full proof content with KaTeX math]</div>
-   </details>
-   ```
-
-2. **Lean 4 verification code** (Section 4): If Lean 4 verification was performed, include the `.lean` source for each theorem in a collapsible block. Default state: **collapsed**.
-   ```html
-   <details>
-   <summary>Lean 4 Verification Code — Theorem N</summary>
-   <pre><code class="language-lean">[Lean 4 source from ./ideation/lean4/IdeationProofs/]</code></pre>
-   <p><strong>Status:</strong> [FULL PASS / PARTIAL PASS (sorry items: ...) / FAIL]</p>
-   </details>
-   ```
-
-3. **CSS for collapsible sections** (add to the `<style>` block):
-   ```css
-   details { margin: 1em 0; border: 1px solid #ddd; border-radius: 6px; padding: 0.5em 1em; }
-   details[open] { background: #fafafa; }
-   summary { cursor: pointer; font-weight: bold; color: #2c3e50; padding: 0.3em 0; }
-   summary:hover { color: #3498db; }
-   .proof { margin-top: 0.5em; padding-left: 1em; border-left: 3px solid #3498db; }
-   ```
-
-The Markdown file (`Proposal.md`) includes everything inline with no collapsing (Markdown has no `<details>` equivalent):
-- **Proof outlines:** always visible
-- **Detailed proofs:** fully expanded inline, every step shown
-- **Lean 4 source code:** complete `.lean` file content in fenced ```lean blocks (NOT summaries or excerpts — the FULL source)
-- **Verification logs:** `lake build` output included
-- **Sorry analysis:** each `sorry` item explained if any exist
-
-This is critical because Proposal.md is the ONLY material the review panel receives. All content from `./ideation/theory.md` and `./ideation/lean4/` must be fully copied into Section 4.
+`Proposal_cn.md` is a direct Chinese translation of `Proposal.md`. Keep all method names, dataset names, mathematical notation, and citations in English. Use parenthetical English for key technical terms, e.g., "消融实验 (Ablation Study)". All five Proposal files share the same 10-section structure (Sections 1-8 are content; Section 9 is the auto-pilot decision log; Section 10 is the reference list).
 
 ### reference.bib Generation
 
-After generating the three Proposal files, produce `./reference.bib` containing BibTeX entries for every paper cited in the proposal:
+After generating the three Proposal files, produce `./reference.bib`:
 
 1. Search for the official BibTeX entry (from the venue website, DBLP, or Semantic Scholar)
 2. If the official entry cannot be found via search, construct one from `./ideation/papers.md`:
@@ -682,7 +689,55 @@ After generating the three Proposal files, produce `./reference.bib` containing 
 3. Use consistent cite keys: first author's surname + year (e.g., `Kwon2020`, `Hottung2022`)
 4. Mark auto-generated entries with `note = {BibTeX auto-generated}` so the user knows to verify
 
-### Proposal Structure
+See **Appendix C** for the full Proposal structure template (Sections 1-10) and **Appendix D** for HTML rendering rules.
+
+---
+
+## Appendix
+
+### A. Auto-Decision Table
+
+| Decision Point | Original Behavior | Auto-Pilot Behavior |
+|---------------|-------------------|---------------------|
+| Phase 0 Q&A | Ask user 5W1H one-by-one | Auto-infer from raw idea + field survey |
+| Phase 0 summary confirmation | Wait for user OK | Auto-proceed, log to questions.md |
+| Phase 2 direction choice | AskUserQuestion with options | Always trigger Phase 2.5 Feasibility Scout |
+| Phase 2.5 confirmation | Wait for user to confirm recommendation | Auto-select best feasibility profile |
+| Phase 4 RQ/method confirmation | AskUserQuestion | Auto-proceed, log to questions.md |
+| Phase 4 Lean 4 verification | N/A (new) | Auto-retry on failure (max 10), auto-escalate if fundamental flaw |
+| Proposal handoff | N/A | Generate draft Proposal.md, set state to review-pending, await external review |
+| Revision from feedback | N/A | Read qualitative feedback from review panel, iterate on weakest areas |
+
+### B. Persistent Mental Frameworks
+
+These two frameworks apply at **every phase**, not just Phase 0. Revisit them actively after each new piece of evidence (a paper, reviewer feedback, a feasibility finding).
+
+#### 5W1H — Continuously Updated
+
+The 5W1H is not a one-time questionnaire. Treat it as a living model of the idea that gets sharper with each iteration:
+
+| Dimension | What to re-examine after new evidence |
+|-----------|--------------------------------------|
+| **What** | Is the problem statement still precise? Did new papers reveal a better framing? |
+| **Why** | Is the motivation still the strongest available? Did we find a more compelling failure case? |
+| **Who** | Has the target community or application user changed with the chosen direction? |
+| **When** | Is there new concurrent work that changes the timing? |
+| **Where** | Has the domain or application scenario become more or less promising? |
+| **How** | Is the method intuition still the best fit given what we now know from the literature? |
+
+If any dimension weakens after new evidence, flag it explicitly and address it before moving to the next phase.
+
+#### First Principles Thinking — Always On
+
+At every decision point, strip away assumptions and reason from fundamentals:
+
+1. **Decompose the problem** — break the research question into its most basic components. What is the core tension or trade-off that makes this hard?
+2. **Challenge inherited assumptions** — question every "everyone does it this way" claim. Why does the field use this method? Is the reason still valid?
+3. **Rebuild from scratch** — given only the fundamental constraints (data, compute, physics, math), what is the most natural solution? Compare it to what the field actually does.
+4. **Identify the real bottleneck** — what is the single constraint that, if removed, would make this problem trivial? That constraint is often the most valuable thing to attack.
+5. **Avoid analogy-driven reasoning** — "this worked in domain X so it should work here" is a hypothesis, not a justification. Ground every claim in first principles before committing to a direction.
+
+### C. Proposal Structure Template
 
 **Citation convention:** All sections use in-text citations as "[N]" referencing the numbered list in Section 10. Every paper mentioned by name MUST have a corresponding entry in Section 10 and in `./reference.bib`.
 
@@ -814,7 +869,7 @@ independently assess whether the justification is valid.]
 
 ### 5.1 Overview
 [High-level overview: algorithm flow or architecture diagram.
-Use Mermaid diagrams (` ```mermaid `) for flowcharts, architecture overviews, and pipeline diagrams in Markdown files (Proposal.md, Proposal_cn.md). Prefer `flowchart TD` for pipelines, `graph LR` for architecture, and `sequenceDiagram` for step-by-step flows.
+Use Mermaid diagrams for flowcharts, architecture overviews, and pipeline diagrams.
 Pseudocode for the core algorithm.]
 
 ### 5.2 Component Details
@@ -940,84 +995,76 @@ In-text citations throughout Sections 1-7 should use "[N]" format referencing
 this list (e.g., "POMO [3] exploits solution symmetries...").
 
 Source: ./ideation/papers.md and ./ideation/literature.md]
+```
 
----
+**Proposal Appendix sections (inside Proposal.md):**
 
-## Appendix
+```markdown
+### Appendix A. Review Panel Summary
+[Populated by the review-gate orchestrator after review passes. Contains aggregated
+reviewer feedback themes and final decision. The ideation model does not generate
+this section — it is filled in by the orchestrator.]
 
-### A. Review Panel Summary
-[Populated by the review-gate orchestrator after review passes. Contains aggregated reviewer feedback themes and final decision. The ideation model does not generate this section — it is filled in by the orchestrator.]
-
-### B. Timeline
+### Appendix B. Timeline
 - Month 1-2: ...
 - Month 3-4: ...
 - Month 5-6: ...
 
-### C. Risks & Mitigations
+### Appendix C. Risks & Mitigations
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 ```
 
----
+### D. HTML Rendering Rules
 
-## Persistent State & Log
+The HTML files (`Proposal.html` and `Proposal_cn.html`) must include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
 
-All session data lives under `./ideation/`:
+#### Collapsible Sections
 
-```
-./ideation/
-├── state.md      ← current snapshot, overwritten after every phase
-├── log.md        ← append-only history of every attempt and score
-├── papers.md     ← append-only index of all papers ever retrieved
-├── literature.md ← structured analysis notes from Phase 3 deep dive
-├── theory.md     ← problem formalization and theoretical analysis from Phase 4
-├── questions.md  ← auto-pilot decision log (append-only) — source for Proposal Section 9
-└── lean4/                ← Lean 4 formal verification project
-    ├── .elan/            ← local elan installation (toolchains, binaries — NOT committed to git)
-    ├── lean-toolchain
-    ├── lakefile.lean
-    ├── IdeationProofs.lean
-    └── IdeationProofs/
-        ├── Basic.lean
-        ├── Theorem1.lean
-        └── ...
+Use `<details>` and `<summary>` elements for:
 
-./Proposal.md      ← final proposal (English, Markdown) — written only after Gate passes
-./Proposal_cn.md   ← final proposal (Chinese, Markdown) — written only after Gate passes
-./Proposal.html    ← final proposal (English, styled HTML with KaTeX)
-./Proposal_cn.html ← final proposal (Chinese, styled HTML with KaTeX)
-./reference.bib    ← BibTeX entries for all cited papers
-```
+1. **Detailed proofs** (Section 4): Each theorem's detailed proof wrapped in a collapsible block. Proof outline remains visible. Default: **collapsed**.
+   ```html
+   <details>
+   <summary>Detailed Proof of Theorem N</summary>
+   <div class="proof">[Full proof content with KaTeX math]</div>
+   </details>
+   ```
 
-**At session start:** read `./ideation/state.md` to resume from the correct phase and iteration. Also read `./ideation/papers.md` to know which papers have already been retrieved — do not re-search or re-summarize papers already recorded there.
+2. **Lean 4 verification code** (Section 4): `.lean` source for each theorem in a collapsible block. Default: **collapsed**.
+   ```html
+   <details>
+   <summary>Lean 4 Verification Code — Theorem N</summary>
+   <pre><code class="language-lean">[Lean 4 source from ./ideation/lean4/IdeationProofs/]</code></pre>
+   <p><strong>Status:</strong> [FULL PASS / PARTIAL PASS (sorry items: ...) / FAIL]</p>
+   </details>
+   ```
 
----
+3. **CSS for collapsible sections** (add to the `<style>` block):
+   ```css
+   details { margin: 1em 0; border: 1px solid #ddd; border-radius: 6px; padding: 0.5em 1em; }
+   details[open] { background: #fafafa; }
+   summary { cursor: pointer; font-weight: bold; color: #2c3e50; padding: 0.3em 0; }
+   summary:hover { color: #3498db; }
+   .proof { margin-top: 0.5em; padding-left: 1em; border-left: 3px solid #3498db; }
+   ```
 
-### papers.md — Append-Only Paper Index
+#### Markdown vs. HTML Differences
 
-Append new papers as they are found in each phase. Never overwrite existing entries. The TLDR column should be a one-sentence summary of what the paper studies/proposes.
+The Markdown file (`Proposal.md`) includes everything inline with no collapsing:
+- **Proof outlines:** always visible
+- **Detailed proofs:** fully expanded inline, every step shown
+- **Lean 4 source code:** complete `.lean` file content in fenced ```lean blocks (NOT summaries — the FULL source)
+- **Verification logs:** `lake build` output included
+- **Sorry analysis:** each `sorry` item explained if any exist
 
-```markdown
-# Papers Index
+This is critical because Proposal.md is the ONLY material the review panel receives.
 
-## Phase 1: Literature Probe
+### E. File Templates
 
-| Paper | Venue/Year | TLDR | Core Claim | Method | Key Limitation |
-|-------|-----------|------|------------|--------|---------------|
-| ... | ... | ... | ... | ... | ... |
+#### state.md — Current Snapshot
 
-## Phase 3: Deep Dive
-
-| Paper | Venue/Year | TLDR | Core Claim | Method | Key Limitation |
-|-------|-----------|------|------------|--------|---------------|
-| ... | ... | ... | ... | ... | ... |
-```
-
----
-
-### state.md — Current Snapshot
-
-Overwrite this file after every phase transition. It always reflects the latest state.
+Overwrite this file after every phase transition.
 
 ```markdown
 # Ideation State
@@ -1027,16 +1074,14 @@ Overwrite this file after every phase transition. It always reflects the latest 
 **Iteration:** [N]
 **Direction:** [chosen direction title, or "TBD"]
 **Lean4Status:** [not_started / in_progress / pass / partial_pass / fail]
-**Lean4Attempt:** [0-5]
+**Lean4Attempt:** [0-10]
 **Next Action:** [what to do when this session resumes]
 **Updated:** [YYYY-MM-DD]
 ```
 
----
+#### log.md — Append-Only History
 
-### log.md — Append-Only History
-
-Append one entry per completed phase or gate check. Never overwrite. This is the full audit trail and the source for the Revision History section (Section 8) of the final proposal.
+Append one entry per completed phase or gate check. Never overwrite. Source for Proposal Section 8.
 
 ```markdown
 # Ideation Log
@@ -1054,7 +1099,8 @@ Append one entry per completed phase or gate check. Never overwrite. This is the
 - [problem 2]: ...
 
 ### Key Decisions & Changes
-[Record every significant change — direction pivots, scope adjustments, method revisions, problem reframing. This feeds Section 8 (Revision History) of the final proposal.]
+[Record every significant change — direction pivots, scope adjustments, method revisions,
+problem reframing. This feeds Section 8 (Revision History) of the final proposal.]
 
 | Change Type | What Changed | Why | Outcome |
 |-------------|-------------|-----|---------|
@@ -1062,17 +1108,35 @@ Append one entry per completed phase or gate check. Never overwrite. This is the
 
 ### Handoff / Revision (if this was a review handoff or revision)
 **Action:** [Handed off draft Proposal to review panel / Received reviewer feedback / Final Proposal generated]
-**Reviewer Feedback Themes:** [list of qualitative concerns from review-feedback-N.md, if revising]
+**Reviewer Feedback Themes:** [list of qualitative concerns from ./ideation/reviews/iteration-N/metareview.md, if revising]
 **Decision:** [what was chosen — which phases to revisit, or "proceed to final"]
 
 ---
 ```
 
----
+#### papers.md — Append-Only Paper Index
 
-### questions.md — Auto-Pilot Decision Log
+Append new papers as they are found. Never overwrite existing entries.
 
-Append new decisions as they are made in each phase. Never overwrite existing entries. This file is the source for Section 9 of the Proposal.
+```markdown
+# Papers Index
+
+## Phase 1: Literature Probe
+
+| Paper | Venue/Year | TLDR | Core Claim | Method | Key Limitation |
+|-------|-----------|------|------------|--------|---------------|
+| ... | ... | ... | ... | ... | ... |
+
+## Phase 3: Deep Dive
+
+| Paper | Venue/Year | TLDR | Core Claim | Method | Key Limitation |
+|-------|-----------|------|------------|--------|---------------|
+| ... | ... | ... | ... | ... | ... |
+```
+
+#### questions.md — Auto-Pilot Decision Log
+
+Append new decisions as they are made. Never overwrite existing entries. Source for Proposal Section 9.
 
 ```markdown
 # Auto-Pilot Decision Log
@@ -1108,14 +1172,14 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 
 ---
 
-## Decision #L — Phase 4: Lean 4 Verification (Attempt M/5)
+## Decision #L — Phase 4: Lean 4 Verification (Attempt M/10)
 **Question:** Do the key theoretical claims formally verify in Lean 4?
 **Formalizable Claims:** [list of claims identified from theory.md, with classification: Yes/Partially/No for each]
 **Claims Not Formalized:** [list any claims classified as "No" with explanation why each is empirical/non-formalizable]
 **Result:** [FULL PASS / PARTIAL PASS / FAIL: error description]
 **Sorry Items:** [list with justification, or "none"]
 **Error Analysis:** [for failures: what went wrong, diagnosis, planned fix]
-**Auto-Choice:** [Proceed to Step 3 / Retry with fix / Escalate to Phase N]
+**Auto-Choice:** [Proceed to Step 4.4 / Retry with fix / Escalate to Phase N]
 **Reasoning:** [why this choice]
 **Confidence:** High / Medium / Low
 
@@ -1129,21 +1193,31 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 **Confidence:** High
 ```
 
+### F. Tool Reference
+
+| Tool | Primary Use |
+|------|-------------|
+| `WebSearch` | Literature search, field survey, baseline research, BibTeX lookup |
+| `Write` / `Edit` | All working files, Proposal files, Lean 4 code |
+| `Read` | Metareview, state.md, papers.md, existing working files |
+| `Bash` | Lean 4 installation and `lake build` |
+| `TodoWrite` | Phase/step progress tracking |
+
 ---
 
 ## Key Interaction Principles
 
-1. **Auto-pilot by default** — run the full pipeline without user interaction; do NOT call `AskUserQuestion`
-2. **Log every auto-decision** — every decision that would have required user input must be recorded in `./ideation/questions.md` with question, context, auto-choice, reasoning, and confidence
+1. **Auto-pilot by default** — run the full pipeline without user interaction
+2. **Log every auto-decision** — every decision recorded in `./ideation/questions.md` with question, context, auto-choice, reasoning, and confidence
 3. **Always propose 2-3 options internally** — never commit to one path without considering alternatives; log all options even if only one is chosen
 4. **Literature first, speculation second** — every claim must be grounded in papers
-5. **First principles always on** — at every decision point, decompose to fundamentals, challenge inherited assumptions, and rebuild from scratch (see "Two Persistent Mental Frameworks" above)
-6. **5W1H is a living model** — revisit all six dimensions after every new piece of evidence, not just in Phase 0
-7. **Hand off to review** — after generating draft Proposal.md, signal completion and await reviewer feedback. You know the conference bar from domain.md but not the scoring mechanics.
+5. **First principles always on** — at every decision point, decompose to fundamentals, challenge inherited assumptions (see Appendix B)
+6. **5W1H is a living model** — revisit all six dimensions after every new piece of evidence, not just in Phase 0 (see Appendix B)
+7. **Hand off to review** — after generating draft Proposal.md, invoke the reviewing skill immediately. You know the conference bar from domain.md but not the scoring mechanics.
 8. **Feasibility-first selection** — when choosing between options, prioritize feasibility > significance > low risk > novelty
 9. **YAGNI for scope** — cut any claim or experiment that is not needed to demonstrate the core insight
 10. **Resume from state** — always check `./ideation/state.md` and `./ideation/questions.md` before starting; append to `./ideation/log.md` after every phase
-11. **Language matching** — detect the language of the user's message and use that language for all working documents (state.md, log.md, literature.md, theory.md, questions.md) and conversational output. The Proposal files follow fixed language rules: Proposal.md and Proposal.html are always in English; Proposal_cn.md and Proposal_cn.html are always in Chinese; reference.bib is language-neutral.
+11. **Language matching** — detect the language of the user's message and use that language for all working documents (state.md, log.md, literature.md, theory.md, questions.md) and conversational output. Proposal files follow fixed language rules: Proposal.md/Proposal.html = English; Proposal_cn.md/Proposal_cn.html = Chinese; reference.bib = language-neutral.
 12. **Override support** — when re-invoked with override instructions, read `./ideation/questions.md`, apply overrides, and re-run from the earliest affected phase
 
 ---

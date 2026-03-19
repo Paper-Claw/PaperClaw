@@ -10,7 +10,7 @@ Each iteration covers revision based on reviewer feedback:
 
 ```
 Iteration N
-  ├── Read reviewer feedback (./ideation/review-feedback-N.md)
+  ├── Read reviewer feedback (./ideation/reviews/iteration-N/metareview.md)
   ├── Identify primary concerns (qualitative themes, NOT scores)
   ├── Determine which phases to revisit
   ├── Re-run from earliest affected phase
@@ -34,7 +34,7 @@ Iteration N
 
 ## Revision Based on Reviewer Feedback
 
-When reviewer feedback is available at `./ideation/review-feedback-N.md`:
+When reviewer feedback is available at `./ideation/reviews/iteration-N/metareview.md`:
 
 1. Read the feedback file carefully — it contains qualitative themes and concerns, NOT numeric scores
 2. Identify the primary concerns raised by reviewers
@@ -72,7 +72,7 @@ In auto-pilot mode, checkpoints are logged but do not pause for user input.
 - STOP and await review feedback
 
 **Revision checkpoint (auto):**
-- Read `./ideation/review-feedback-N.md`
+- Read `./ideation/reviews/iteration-N/metareview.md`
 - Present the reviewer concerns as text output
 - Auto-proceed to the earliest affected phase
 - Log the revision decision to `./ideation/questions.md`
@@ -87,7 +87,7 @@ After the Proposal is generated, the user can review `./ideation/questions.md` a
 At the start of every session, read `./ideation/state.md`:
 - If state exists: resume from the current phase and iteration
 - If no state: start from Phase 0
-- If state shows `Phase: review-pending`: the ideation model waits for `./ideation/review-feedback-N.md` to appear
+- If state shows `Phase: review-pending`: the ideation model waits for `./ideation/reviews/iteration-N/metareview.md` to appear
 - If state shows `Phase: revision-N`: read the feedback file and begin revision
 
 After every completed phase or review handoff, do two things:
