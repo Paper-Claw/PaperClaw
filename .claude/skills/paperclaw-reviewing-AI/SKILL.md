@@ -315,7 +315,7 @@ Determine pass/fail, update state, and invoke the ideation skill for next action
 1. Update `./ideation/state.md`: `Phase: Done`
 2. Add caveat to metareview: "The review panel did not reach consensus after 10 rounds. Remaining concerns: [list]"
 3. **Invoke the ideation skill** via the Skill tool with:
-   > "The review panel has exhausted 10 revision rounds without consensus. Read `./Proposal.md` and generate the four final output files: `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, and `./reference.bib`. Add caveat at the top of Section 9: 'NOTE: This proposal did not pass the review gate after 10 rounds. Remaining reviewer concerns: [list from metareview].'"
+   > "The review panel has exhausted 10 revision rounds without consensus. Read `./Proposal.md` and generate the four final output files: `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, and `./reference.bib`. In Section 9, add a new subsection `### Review Panel Notes` immediately before the `### Decision Log` subsection, containing: 'NOTE: This proposal did not pass the review gate after 10 rounds. Remaining reviewer concerns: [list from metareview].' This subsection must be visually distinct from the auto-pilot decision log entries."
 4. **Validate outputs** (same check as PASS step 4). Retry up to 2 times if any file is missing.
 
 ### Completion Criteria
