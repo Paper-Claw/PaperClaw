@@ -96,13 +96,16 @@ Is the method well-defined and are the claims defensible?
 
 **Lean 4 Formal Verification Bonus/Penalty:**
 
-Lean 4 verification results adjust the Technical Soundness score:
-- Full verification (no sorry): +1 to Soundness (demonstrates rigorous theoretical grounding, cap at 5)
-- Partial verification (sorry on empirical sub-goals): no change
-- Verification skipped (all 3 skip conditions met — no formalizable claims): no change
-- Verification skipped WITHOUT meeting all 3 skip conditions: -1 to Soundness (unjustified skip of verification)
-- Verification failed after 5 retries: -1 to Soundness (theoretical claims may be unsound, floor at 1)
-- Verification escalation: Soundness capped at 2 (fundamental theoretical issues detected)
+Lean 4 verification results adjust the Technical Soundness score. See `references/review-protocol.md` "Soundness Score Adjustment" table for the authoritative 6-category rules. Summary:
+
+| Status | Adjustment |
+|--------|------------|
+| FULL PASS (no `sorry`) | +1 (cap at 5) |
+| PARTIAL PASS (`sorry` on empirical sub-goals only) | No change |
+| FAIL (attempted, failed after retries) | -1 (floor at 1) |
+| SKIPPED — unjustified (formalizable claims exist, no verification) | -1 (floor at 1) |
+| SKIPPED — justified (no formalizable claims in theory.md) | No change |
+| ESCALATION (`Lean4Escalation: true` in state.md) | Cap at 2 |
 
 ---
 

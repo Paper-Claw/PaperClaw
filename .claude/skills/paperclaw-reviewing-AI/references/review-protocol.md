@@ -12,45 +12,48 @@ For each of the 4 dimensions (Novelty, Significance, Technical Soundness, Experi
 Sum the 4 median dimension scores.
 
 ### Pass Condition
-- Median total ≥ 16/20
-- No single median dimension < 3
+- Median total **>= 16/20**
+- No single median dimension **< 3**
 - Both conditions must be met
 
 ### Split Decision Detection
 If any dimension has a range (max - min) > 2 across reviewers:
 1. Flag that dimension as "split decision"
 2. Include all reviewer justifications for that dimension in the aggregation report
-3. If the median for that dimension is exactly 3 (borderline), consider it a weakness in feedback synthesis
+3. If the median for that dimension is exactly 3 (borderline), flag as a weakness in feedback synthesis
 
 ---
 
-## Lean 4 Verification Audit Protocol
+## Lean 4 Verification Audit
 
-The orchestrator independently audits Lean 4 verification:
+The orchestrator independently audits Lean 4 verification status. This is separate from what individual reviewers assess from Proposal.md Section 4.
 
-1. Read `./ideation/theory.md`
-2. Classify each claim as formalizable or not (using the same table in the ideation skill)
-3. Check `./ideation/lean4/` for corresponding `.lean` files
-4. Check `lake build` results if available
+### Audit Procedure
+1. Read `./ideation/theory.md` — classify each claim as formalizable or not
+2. Check `./ideation/lean4/` for corresponding `.lean` files
+3. Check `lake build` results if available
 
-### Adjustment to Soundness Score
-| Verification Status | Adjustment |
-|--------------------|------------|
-| FULL PASS (no sorry) | +1 to median Soundness (cap at 5) |
-| PARTIAL PASS (sorry only on empirical sub-goals) | No change |
-| Verification attempted but FAILED after retries | -1 to median Soundness (floor at 1) |
-| Formalizable claims exist but NO verification attempted | -1 to median Soundness (floor at 1) |
-| No formalizable claims exist (purely empirical) | No change |
+### Soundness Score Adjustment
+
+| Status | Condition | Adjustment |
+|--------|-----------|------------|
+| **FULL PASS** | `lake build` succeeds, no `sorry` | +1 to median Soundness (cap at 5) |
+| **PARTIAL PASS** | `sorry` only on empirical sub-goals | No change |
+| **FAIL** | Verification attempted, failed after retries | -1 to median Soundness (floor at 1) |
+| **SKIPPED (unjustified)** | Formalizable claims exist but no verification attempted | -1 to median Soundness (floor at 1) |
+| **SKIPPED (justified)** | No formalizable claims exist (purely empirical work) | No change |
+| **ESCALATION** | Ideation pipeline flagged `Lean4Escalation: true` | Cap median Soundness at 2 |
+
+> **Note:** These 6 categories are the authoritative Lean 4 adjustment rules. Both `conference-readiness.md` and the reviewing SKILL.md reference this table.
 
 ---
 
-## Feedback Synthesis Rules
+## Information Barrier
 
-### Information Barrier
-The ideation model must NEVER see:
+### What the Ideation Model Must NEVER See
 - Numeric scores (X/5, XX/20)
 - Dimension names as scoring labels
-- Pass/fail thresholds
+- Pass/fail thresholds or threshold language
 - The scoring rubric itself
 - Individual reviewer identities or model names
 
@@ -58,18 +61,23 @@ The ideation model must NEVER see:
 - Qualitative themes (strengths and concerns)
 - Specific suggestions from reviewers
 - Questions reviewers want addressed
-- Whether to revise (via state.md Phase: revision-N) or finalize (Phase: Done)
+- Decision via `state.md` (`Phase: Done` = pass, `Phase: revision-N` = revise)
 
 ### Synthesis Process
 1. Read all individual reviews from `./ideation/reviews/iteration-N/`
 2. Extract all strengths, weaknesses, and questions
-3. Group weaknesses by theme (not by reviewer or dimension)
-4. Remove all numeric scores and dimension labels
+3. Group weaknesses by **theme** (not by reviewer or dimension)
+4. Strip all numeric scores and dimension labels
 5. Write synthesized feedback to `./ideation/reviews/iteration-N/metareview.md`
 
-### Feedback File Format
+---
+
+## Metareview Format
+
+The metareview is the ONLY review artifact the ideation model reads. It must contain zero numeric scores, zero dimension labels, zero threshold language.
+
 ```markdown
-# Review Feedback — Iteration N
+# Meta-Review — Iteration N
 
 ## Key Strengths Noted by Reviewers
 - [theme 1, with specific details from multiple reviews]
@@ -77,7 +85,7 @@ The ideation model must NEVER see:
 - [theme 3]
 
 ## Primary Concerns
-1. **[Concern Theme]**: [synthesized from multiple reviewers — what the concern is, why it matters, what would address it]
+1. **[Concern Theme]**: [synthesized from multiple reviewers — what, why, how to fix]
 2. **[Concern Theme]**: [synthesized description]
 3. **[Concern Theme]**: [synthesized description]
 
@@ -95,62 +103,68 @@ Based on the concerns above, consider revisiting:
 - [Phase Y for concern 2]
 ```
 
+> **No `## Gate Result` line.** The gate decision is communicated exclusively via `state.md` and stored in `aggregation.md`. The metareview must remain score-free and decision-free.
+
 ---
 
-## Reviewer Prompt Templates
+## Standardized Review Output Format
 
-### Common Prefix (all reviewers)
-```
-You are an independent reviewer evaluating a research proposal for conference readiness.
+All reviewers (Claude agent, codex, opencode) must produce reviews in this exact format. The orchestrator parses scores from the `## Scores` section.
 
-YOUR PERSONA: [assigned persona]
+```markdown
+## Review — [Assigned Persona] ([Model Name])
 
-INSTRUCTIONS:
-1. Read ONLY the file ./Proposal.md — this is the ONLY file you should read
-2. Do NOT read any files in ./ideation/ directory
-3. The Proposal is self-contained: Section 4 (Theoretical Analysis) includes complete
-   mathematical foundations, full proofs (every step), complete Lean 4 source code,
-   verification logs, and a verification summary table. Evaluate all of these.
-4. Score the proposal on 4 dimensions using the rubric below
-5. Provide specific, actionable feedback
-
-SCORING RUBRIC:
-[Full rubric from conference-readiness.md]
-
-OUTPUT FORMAT:
-Use EXACTLY this structure (the orchestrator will parse scores from it):
-
-## Overall Assessment
+### Overall Assessment
 [2-3 sentence summary of the proposal's strengths and weaknesses]
 
-## Scores
+### Scores
 - Novelty: [1-5]/5 — [one sentence justification]
 - Significance: [1-5]/5 — [one sentence justification]
 - Technical Soundness: [1-5]/5 — [one sentence justification]
 - Experimental Feasibility: [1-5]/5 — [one sentence justification]
+- **Total: [sum]/20**
 
-## Strengths
-1. [strength with specific reference to proposal section]
+### Strengths
+1. [specific, citing proposal sections by name]
 2. [strength]
 3. [strength]
 
-## Weaknesses
-1. [weakness with specific evidence from the proposal]
+### Weaknesses
+1. [specific, actionable — what should be improved and how]
 2. [weakness]
 3. [weakness]
 
-## Questions for Authors
-1. [question]
+### Questions for Authors
+1. [specific question that, if answered well, would address a concern]
 2. [question]
 
-## Suggestions for Improvement
+### Suggestions for Improvement
 - [actionable suggestion]
 - [actionable suggestion]
+
+### Lean 4 Verification Audit
+[Evaluate based on Proposal.md Section 4 only]
+- Formalizable claims found: [list each theorem/bound/guarantee]
+- Lean 4 code included: [yes — full source / yes — partial / no]
+- Verification status per claim: [PASS / PARTIAL (N sorry items) / FAIL / NOT ATTEMPTED]
+- Proof completeness: [all steps justified / gaps identified at: ...]
+- Assessment: [adequate / partially adequate / missing / not applicable]
+- If missing or inadequate: [explain what was expected and why it matters]
+
+### Recommendation: Accept / Revise / Reject
+[1-2 sentence summary]
 ```
 
-### Persona-Specific Additions
-- **Theory-focused:** "Pay special attention to: mathematical rigor, proof quality, whether Lean 4 verification was attempted for formal claims, whether assumptions are clearly stated"
-- **Applied ML:** "Pay special attention to: practical impact, experimental design quality, baseline selection fairness, reproducibility, compute budget realism"
-- **Methodical novelty assessor:** "Pay special attention to: how the contribution differs from the closest existing work, whether the novelty is in the method or just the application domain, positioning in the related work section"
-- **Devil's advocate:** "Actively look for: hidden assumptions, failure modes, edge cases where the method might break, claims that are not well-supported"
-- **Breadth reviewer:** "Consider: cross-disciplinary connections, broader impact, whether the problem framing could appeal to adjacent communities"
+---
+
+## Persona-Specific Instructions
+
+Append these to the common prompt based on the assigned persona:
+
+| Persona | Additional Focus |
+|---------|-----------------|
+| Theory-focused senior researcher | Mathematical rigor, proof quality, Lean 4 verification completeness, assumption clarity |
+| Applied ML researcher | Practical impact, experimental design quality, baseline fairness, reproducibility, compute budget |
+| Methodical novelty assessor | Differentiation from closest existing work, method-vs-application novelty, related work positioning |
+| Devil's advocate / reasoning critic | Hidden assumptions, failure modes, edge cases, unsupported claims |
+| Breadth reviewer | Cross-disciplinary connections, broader impact, missing perspectives, appeal to adjacent communities |
