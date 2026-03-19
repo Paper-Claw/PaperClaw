@@ -44,7 +44,7 @@ Raw Idea
   │
   ├─ Review feedback received → iterate based on qualitative concerns (max 10 rounds)
   │
-  └─ Review passed → generate final Proposal (HTML, CN, BibTeX)
+  └─ Review passed → generate final Proposal (MD_CN, HTML, HTML_CN, BibTeX)
 ```
 
 Persist loop state to `./ideation/state.md` so the session can be resumed.
@@ -113,7 +113,7 @@ After reviewing the Proposal and `./ideation/questions.md`, the user can re-invo
 | Phase 4 | `Write` | Log SMART RQ and method design decisions to `./ideation/questions.md` |
 | Handoff | `Write` | Generate draft `./Proposal.md`, update state to review-pending |
 | Revision | `Read` | Read `./ideation/review-feedback-N.md` from review panel |
-| Proposal | `Write` | Generate final `./Proposal.md`, `./Proposal.html`, `./Proposal_cn.html`, `./reference.bib` (after review PASS) |
+| Proposal | `Write` | Generate final `./Proposal.md`, `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, `./reference.bib` (after review PASS) |
 | Proposal | `WebSearch` | Search for official BibTeX entries (DBLP, Semantic Scholar) for `./reference.bib` |
 | All | `TodoWrite` | Track current phase and progress within each phase |
 
@@ -611,18 +611,19 @@ The review panel controls the iteration count and pass/fail decision — you sim
 
 ## Research Proposal Output
 
-Generated after the independent review panel signals PASS (or after max iterations with caveat). The initial draft `./Proposal.md` is generated at the end of Phase 4 for review; the final HTML/CN/BibTeX files are generated only after the review panel approves.
+Generated after the independent review panel signals PASS (or after max iterations with caveat). The initial draft `./Proposal.md` is generated at the end of Phase 4 for review; the final CN/HTML/BibTeX files are generated only after the review panel approves.
 
-**Four output files are produced:**
+**Five output files are produced:**
 
 | File | Format | Language | Purpose |
 |------|--------|----------|---------|
 | `./Proposal.md` | Markdown | English | Source of truth, version-controlled |
+| `./Proposal_cn.md` | Markdown | Chinese | Chinese translation for local reading and paper writing |
 | `./Proposal.html` | HTML | English | Readable standalone document with styling |
 | `./Proposal_cn.html` | HTML | Chinese | Chinese translation for local collaboration |
 | `./reference.bib` | BibTeX | N/A | BibTeX entries for all cited papers |
 
-All three Proposal files share the same 10-section structure (Sections 1-8 are content; Section 9 is the auto-pilot decision log; Section 10 is the reference list). The HTML files should include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
+`Proposal_cn.md` is a direct Chinese translation of `Proposal.md`. Keep all method names, dataset names, mathematical notation, and citations in English. Use parenthetical English for key technical terms, e.g., "消融实验 (Ablation Study)". All five Proposal files share the same 10-section structure (Sections 1-8 are content; Section 9 is the auto-pilot decision log; Section 10 is the reference list). The HTML files should include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
 
 ### HTML-Specific Rendering Rules
 
@@ -812,7 +813,8 @@ independently assess whether the justification is valid.]
 ## 5. Proposed Method
 
 ### 5.1 Overview
-[High-level overview: algorithm flow or architecture diagram in ASCII/text.
+[High-level overview: algorithm flow or architecture diagram.
+Use Mermaid diagrams (` ```mermaid `) for flowcharts, architecture overviews, and pipeline diagrams in Markdown files (Proposal.md, Proposal_cn.md). Prefer `flowchart TD` for pipelines, `graph LR` for architecture, and `sequenceDiagram` for step-by-step flows.
 Pseudocode for the core algorithm.]
 
 ### 5.2 Component Details
@@ -981,6 +983,7 @@ All session data lives under `./ideation/`:
         └── ...
 
 ./Proposal.md      ← final proposal (English, Markdown) — written only after Gate passes
+./Proposal_cn.md   ← final proposal (Chinese, Markdown) — written only after Gate passes
 ./Proposal.html    ← final proposal (English, styled HTML with KaTeX)
 ./Proposal_cn.html ← final proposal (Chinese, styled HTML with KaTeX)
 ./reference.bib    ← BibTeX entries for all cited papers
@@ -1140,7 +1143,7 @@ Append new decisions as they are made in each phase. Never overwrite existing en
 8. **Feasibility-first selection** — when choosing between options, prioritize feasibility > significance > low risk > novelty
 9. **YAGNI for scope** — cut any claim or experiment that is not needed to demonstrate the core insight
 10. **Resume from state** — always check `./ideation/state.md` and `./ideation/questions.md` before starting; append to `./ideation/log.md` after every phase
-11. **Language matching** — detect the language of the user's message and use that language for all working documents (state.md, log.md, literature.md, theory.md, questions.md) and conversational output. The Proposal files follow fixed language rules: Proposal.md and Proposal.html are always in English; Proposal_cn.html is always in Chinese; reference.bib is language-neutral.
+11. **Language matching** — detect the language of the user's message and use that language for all working documents (state.md, log.md, literature.md, theory.md, questions.md) and conversational output. The Proposal files follow fixed language rules: Proposal.md and Proposal.html are always in English; Proposal_cn.md and Proposal_cn.html are always in Chinese; reference.bib is language-neutral.
 12. **Override support** — when re-invoked with override instructions, read `./ideation/questions.md`, apply overrides, and re-run from the earliest affected phase
 
 ---

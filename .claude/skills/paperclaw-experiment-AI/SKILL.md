@@ -6,8 +6,8 @@ description: >-
   or has a Proposal.md ready and needs to execute the full experiment pipeline.
   Runs an auto-pilot loop of server setup → experiment planning → baseline reproduction →
   our method implementation → report generation. All working state lives in ./experiment/.
-  Produces report.md, report.html, and report_cn.html as final deliverables.
-version: 1.0.0
+  Produces Report.md, Report.html, Report_cn.md, and Report_cn.html as final deliverables.
+version: 1.1.0
 ---
 
 # PaperClaw Experiment AI — Full Experiment Execution Pipeline
@@ -20,6 +20,7 @@ Automate the complete experiment lifecycle: from remote server setup, through ba
 >
 > Every claimed number in the final report must be backed by a runnable script and a logged result.
 > Every failure is an opportunity to learn — record it.
+> Every claim in the Proposal must be proven by a dedicated experiment.
 
 ---
 
@@ -73,6 +74,16 @@ updated: <timestamp>
 - **Blocker**: <description or "none">
 - **Last Action**: <brief description>
 - **Server**: <connected / disconnected>
+
+## Progress Tracking
+
+- **Total Experiments**: <N> (baselines: <N>, ablations: <N>, claim-proofs: <N>, analysis: <N>)
+- **Completed**: <N>
+- **Remaining**: <N>
+- **Current Job**: <description, e.g., "Training MethodA on Dataset1">
+- **Job Started**: <timestamp>
+- **Estimated Time Per Job**: <minutes>
+- **Estimated Remaining Time**: <H hours M minutes>
 ```
 
 **Update state.md** at:
@@ -80,6 +91,44 @@ updated: <timestamp>
 - The start and end of every major step
 - When a blocker is encountered or resolved
 - When asking the user for input
+- When a training job starts or finishes (update progress tracking fields)
+
+### Progress Tracking & Remaining Time
+
+**When a training job starts**, record the start timestamp in state.md under `Job Started`.
+
+**When a training job finishes**, compute actual elapsed time and update `Estimated Time Per Job` with a running average:
+```
+avg = (previous_avg * completed_count + this_job_time) / (completed_count + 1)
+```
+
+**Estimated Remaining Time** formula:
+```
+remaining_time = remaining_experiments * avg_time_per_job
+```
+
+**When the user asks "how long left?" or "what's the progress?"**, read state.md and report:
+
+```
+📊 Experiment Progress
+━━━━━━━━━━━━━━━━━━━━━
+Phase: <current phase name>
+Step:  <current step>
+
+Progress: <completed>/<total> experiments complete
+  ├── Baselines:   <X>/<N> done
+  ├── Ablations:   <X>/<N> done
+  ├── Claim proofs: <X>/<N> done
+  └── Analysis:    <X>/<N> done
+
+Current job: <description>
+Running for: <elapsed time>
+
+Avg time/job: ~<M> minutes
+Est. remaining: ~<H>h <M>m
+```
+
+If no timing data is available yet (first job), report "Timing data not yet available."
 
 ### log.md Event Format
 
@@ -118,9 +167,10 @@ Final outputs in project root:
 | File | Format | Audience |
 |------|--------|----------|
 | `results.md` | Markdown | Running experiment result tables (updated throughout) |
-| `report.md` | Markdown | Detailed experiment report for paper writing |
-| `report.html` | HTML | Polished English report for user review |
-| `report_cn.html` | HTML | Polished Chinese report for user review |
+| `Report.md` | Markdown | Detailed English report for paper writing |
+| `Report_cn.md` | Markdown | Chinese translation of Report.md for paper writing |
+| `Report.html` | HTML | Polished English report for user review |
+| `Report_cn.html` | HTML | Polished Chinese report for user review |
 
 ---
 
@@ -292,13 +342,24 @@ For each baseline method mentioned in the Proposal:
 4. **Find official code repository** (GitHub/GitLab)
 5. **Check reproducibility**: Does the repo have clear instructions? Pre-trained models?
 
+**Additionally**, for each baseline paper:
+6. **Mine their comparison table** — what methods did *they* compare against?
+7. **Mine their datasets** — what datasets did *they* use that we haven't included yet?
+8. **Identify gaps**: Are there SOTA methods or widely-used datasets from their tables that are missing from our current plan?
+
+**Augment the experiment plan** with:
+- Any SOTA method (published ≤ 2 years ago at a top venue) that appears in multiple comparison tables but is not in our Proposal
+- Any benchmark dataset that is widely used in the field (appears in ≥ 2 papers) but is not in our Proposal
+- Flag augmented entries as `[Added]` in the tables so the user can review them
+
 Build a **Baseline Reference Table**:
 
 ```markdown
-| Method | Venue | Year | GitHub | Dataset1-Metric | Dataset2-Metric | Reproducibility |
-|--------|-------|------|--------|-----------------|-----------------|-----------------|
-| MethodA | NeurIPS'24 | 2024 | url | 85.3 | 72.1 | High (pretrained) |
-| MethodB | ICML'23 | 2023 | url | 83.7 | 70.5 | Medium (no pretrained) |
+| Method | Venue | Year | GitHub | Dataset1-Metric | Dataset2-Metric | Reproducibility | Source |
+|--------|-------|------|--------|-----------------|-----------------|-----------------|--------|
+| MethodA | NeurIPS'24 | 2024 | url | 85.3 | 72.1 | High (pretrained) | Proposal |
+| MethodB | ICML'23 | 2023 | url | 83.7 | 70.5 | Medium (no pretrained) | Proposal |
+| MethodC | ICLR'24 | 2024 | url | 86.1 | 73.4 | High | [Added] from MethodA table |
 ```
 
 #### Step 1.3: Research Datasets
@@ -319,7 +380,16 @@ Build a **Dataset Reference Table**:
 
 #### Step 1.4: Design Experiment Matrix
 
-Create a full experiment matrix:
+Create a full experiment matrix.
+
+**First, extract all explicit and implicit claims from Proposal.md.** For example:
+- "Our method is more effective than baselines" → Main comparison
+- "Component X is the key contributor" → Ablation study
+- "Our method is more efficient" → Efficiency analysis
+- "Our method captures long-range dependencies better" → Specific claim-proof experiment
+- "Our method generalizes across domains" → Cross-domain experiment
+
+Each claim must map to at least one dedicated experiment:
 
 ```markdown
 ## Main Experiments
@@ -332,12 +402,21 @@ Create a full experiment matrix:
 |------------|----------|---------|---------|
 | Component ablation | -ModA, -ModB, -ModC | D1 | Component contribution |
 
+## Claim-Proof Experiments
+| Claim (from Proposal) | Experiment Design | Dataset | Metric | Expected Result |
+|-----------------------|-------------------|---------|--------|-----------------|
+| "captures long-range deps" | Compare attention span / receptive field vs. MethodA | D1 | Attention entropy, long-range accuracy | Ours shows broader attention |
+| "generalizes to unseen domains" | Train on D1, test on D2 (zero-shot) | D2 | Acc drop vs. baseline | Smaller degradation |
+| "more efficient" | Measure FLOPs, latency, params | D1 | FLOPs, ms/sample, #params | Ours lower than SOTA |
+
 ## Analysis Experiments
 | Experiment | Type | Dataset | Purpose |
 |------------|------|---------|---------|
 | Efficiency | Time/Memory | D1 | Scalability claim |
 | Visualization | t-SNE/Attention | D1 | Interpretability |
 ```
+
+> **Rule**: Every non-trivial claim in the Proposal must have a corresponding row in the Claim-Proof table. If a claim cannot be tested experimentally, flag it in plan.md with a note.
 
 #### Step 1.5: Write plan.md
 
@@ -719,6 +798,37 @@ Report **mean ± std** in results.md. Update result table format:
 | **Ours** | **86.2±0.3** | **74.8±0.5** |
 ```
 
+#### Step 3.5c: Claim-Proof Experiments
+
+Run all claim-proof experiments defined in the Claim-Proof table from plan.md:
+
+For each claim:
+1. Design and implement the measurement/comparison code
+2. Run the experiment
+3. Check whether the result supports the claim
+4. If the result **contradicts** the claim, this is critical — log it prominently in ours.md and escalate to the user immediately (do not attempt to hide negative results)
+
+```bash
+ssh <server> "cd <workdir> && source .venv/bin/activate && python ours/claim_proof.py --claim <claim_id>"
+```
+
+Record in ours.md:
+
+```markdown
+## Claim Proof: "<claim text>"
+
+**Experiment**: <description>
+**Result**: [Supported / Partially Supported / Contradicted]
+
+| Metric | Ours | Baseline | Expected Direction | Pass? |
+|--------|------|----------|-------------------|-------|
+| <metric> | <val> | <val> | ↑ better | ✅/❌ |
+
+**Conclusion**: <1-2 sentences interpreting the result>
+```
+
+Update results.md with a dedicated "Claim Verification" section.
+
 #### Step 3.6: Analysis Experiments
 
 Conduct analysis experiments from plan.md:
@@ -781,6 +891,7 @@ Checklist:
 □ All baseline reproduced results are within tolerance
 □ Our method beats all baselines (flag any exceptions)
 □ All ablation studies completed
+□ All claim-proof experiments completed (check Claim Verification section in results.md)
 □ All analysis experiments completed
 □ results.md is fully populated (no '-' or 'TBD' remaining)
 □ comparison.md has complete iteration logs
@@ -789,7 +900,7 @@ Checklist:
 
 If any items are incomplete, **go back** to the relevant phase and complete them before proceeding.
 
-### Step 4.2: Generate report.md
+### Step 4.2: Generate Report.md
 
 This is the **detailed English report** for paper writing. It must be comprehensive.
 
@@ -804,6 +915,17 @@ This is the **detailed English report** for paper writing. It must be comprehens
 
 ### Overview
 <High-level description matching the Proposal.md method section>
+
+Use Mermaid diagrams (` ```mermaid `) in Report.md and Report_cn.md for method architecture, training pipeline, and data flow. Prefer:
+- `flowchart TD` for training/inference pipelines
+- `graph LR` for module/architecture overviews
+- `sequenceDiagram` for step-by-step algorithms
+
+Example:
+```mermaid
+graph LR
+    Input --> Encoder --> Fusion --> Decoder --> Output
+```
 
 ### Architecture
 <Detailed architecture description with component names matching the code>
@@ -945,9 +1067,9 @@ This is the **detailed English report** for paper writing. It must be comprehens
 <Commands to reproduce key results>
 ```
 
-### Step 4.3: Generate report.html
+### Step 4.3: Generate Report.html
 
-Convert report.md to a polished, styled HTML report. Use inline CSS for portability.
+Convert Report.md to a polished, styled HTML report. Use inline CSS for portability.
 
 **Styling requirements**:
 - Clean, academic style (similar to a paper supplementary)
@@ -989,35 +1111,47 @@ Convert report.md to a polished, styled HTML report. Use inline CSS for portabil
   </style>
 </head>
 <body>
-  <!-- Rendered content from report.md -->
+  <!-- Rendered content from Report.md -->
 </body>
 </html>
 ```
 
-### Step 4.4: Generate report_cn.html
+### Step 4.4: Generate Report_cn.md
 
-Translate report.html content to Chinese. Keep:
+Generate a Chinese Markdown translation of Report.md. Keep:
+- All numbers, method names, dataset names in English
+- Table structures and section structure identical to Report.md
+- Technical terms with English in parentheses where helpful, e.g., "消融实验 (Ablation Study)"
+- All file/code paths unchanged
+
+Save as `./Report_cn.md`.
+
+> **Purpose**: Report_cn.md serves as the Chinese-language working document for paper writing. The user may call the paperclaw-ideation-AI skill to polish the Proposal.md experiments section based on this report.
+
+### Step 4.5: Generate Report_cn.html
+
+Translate Report.html content to Chinese. Keep:
 - All numbers, method names, dataset names in English
 - Table structures identical
 - Section structure identical
 - Technical terms with English in parentheses where helpful, e.g., "消融实验 (Ablation Study)"
 
-Use the same HTML template/styling as report.html, but with `lang="zh-CN"` and adjusted font:
+Use the same HTML template/styling as Report.html, but with `lang="zh-CN"` and adjusted font:
 ```css
 body { font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', serif; }
 ```
 
-### Step 4.5: Final Git Commit
+### Step 4.6: Final Git Commit
 
 ```bash
 # Local git commit for experiment working files
-git add experiment/ results.md report.md report.html report_cn.html
+git add experiment/ results.md Report.md Report_cn.md Report.html Report_cn.html
 git commit -m "feat(experiment): complete experiment pipeline — all phases done"
 ```
 
 ### Tool Usage
 - `Read`: plan.md, results.md, comparison.md, ours.md, Proposal.md
-- `Write`: report.md, report.html, report_cn.html
+- `Write`: Report.md, Report_cn.md, Report.html, Report_cn.html
 - `Bash`: Git operations
 - `TodoWrite`: Track report generation progress
 
@@ -1112,11 +1246,20 @@ scp -P <port> ./ours/model.py <user>@<host>:<workdir>/ours/model.py
 
 ### Local Git (working files)
 
+Commit local working files at every major milestone to maintain a full history version of the experiment:
+
 | Milestone | Commit Message |
 |-----------|---------------|
 | Plan ready | `docs(experiment): generate experiment plan` |
+| Baseline reproduced | `docs(results): reproduce <method> on <dataset>` |
+| Our method beats baseline | `docs(results): ours beats <method> on <dataset> (+X.X)` |
+| Ablation done | `docs(results): complete ablation study` |
+| Claim proof done | `docs(results): verify claim "<short claim>"` |
+| Analysis done | `docs(results): complete <analysis_type> analysis` |
 | Results updated | `docs(results): update results for <method/dataset>` |
-| Report generated | `docs(report): generate experiment reports` |
+| Report generated | `docs(report): generate experiment reports (EN + CN)` |
+
+**Rule**: Never squash or amend local experiment commits. The git log is the full history of the experimental process, useful for tracing decisions and writing the paper's experiment section.
 
 ---
 
@@ -1149,14 +1292,17 @@ scp -P <port> ./ours/model.py <user>@<host>:<workdir>/ours/model.py
 
 1. **Reproduce before innovate** — Never skip baseline reproduction
 2. **Log everything** — Every iteration, every failure, every fix
-3. **Git frequently** — Commit at every milestone for rollback safety
+3. **Git frequently** — Commit at every milestone for rollback safety; never squash local experiment commits
 4. **Venv always** — Never install packages globally on the server
 5. **Numbers must match** — Reproduced baselines within tolerance before proceeding
 6. **Beat all baselines** — Our method must win on all datasets before reporting
-7. **Reports serve two audiences** — HTML for quick user review, MD for paper writing
-8. **Never store secrets** — Sudo password stays in session memory only
-9. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
-10. **Download results locally** — Keep experiment/figures/ synced for reports
+7. **Prove every claim** — Every non-trivial claim in Proposal.md must have a dedicated claim-proof experiment
+8. **Expand comparison coverage** — Mine baselines' own comparison tables to add SOTA methods and representative datasets
+9. **Track progress** — Update state.md at every job boundary; report ETA when user asks
+10. **Reports serve two audiences** — HTML for quick user review, MD (EN + CN) for paper writing
+11. **Never store secrets** — Sudo password stays in session memory only
+12. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
+13. **Download results locally** — Keep experiment/figures/ synced for reports
 
 ---
 
