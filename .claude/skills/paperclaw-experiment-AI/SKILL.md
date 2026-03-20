@@ -488,14 +488,14 @@ The executor supplements the strategist's experiment matrix (already in plan.md 
 
 Also create `./experiment/codebase/.gitignore`:
 ```
-data/
+/data/
 .venv/
 __pycache__/
 *.pyc
-checkpoints/
-results/
-figures/
-wandb/
+/checkpoints/
+/results/
+/figures/
+/wandb/
 .env
 ```
 
@@ -510,8 +510,8 @@ git commit -m "chore: initialize experiment codebase scaffold"
 **c) Push to all connected servers** (see Appendix H push command) — run in parallel for all connected servers:
 ```bash
 rsync -az \
-  --exclude='data/' --exclude='.venv/' --exclude='__pycache__/' \
-  --exclude='checkpoints/' --exclude='results/' --exclude='figures/' --exclude='wandb/' \
+  --exclude='/data/' --exclude='.venv/' --exclude='__pycache__/' \
+  --exclude='/checkpoints/' --exclude='/results/' --exclude='/figures/' --exclude='/wandb/' \
   ./experiment/codebase/ \
   -e "ssh -p <port>" <user>@<host>:<workdir>/
 ```
