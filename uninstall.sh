@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# uninstall.sh — Remove PaperClaw symlinks from Claude, codex, and opencode directories
+# uninstall.sh — Remove PaperClaw symlinks from Claude Code global directory
 # Usage: ./uninstall.sh [--dry-run]
 #
 # Removes only symlinks that point INTO this repository.
@@ -61,7 +61,6 @@ fi
 remove_if_ours() {
     local dst="$1"
 
-    # Skip if not a symlink
     [[ -L "${dst}" ]] || return 0
 
     local target
@@ -69,7 +68,6 @@ remove_if_ours() {
     target="$(readlink "${dst}")"
     resolved_target="$(readlink -f "${dst}" || true)"
 
-    # Only remove if the symlink points into this repository
     if [[ "${resolved_target}" == "${REPO_DIR}"* ]]; then
         if [[ "$DRY_RUN" == true ]]; then
             info "Would remove: ${dst} → ${target}"
@@ -92,9 +90,10 @@ process_directory() {
         return
     fi
 
-    shopt -s nullglob
-    local items=("${dir}"/paperclaw*)
-    shopt -u nullglob
+    local items=()
+    while IFS= read -r -d '' item; do
+        items+=("$item")
+    done < <(find "${dir}" -maxdepth 1 -name 'paperclaw*' -print0 2>/dev/null | sort -z)
 
     for item in "${items[@]}"; do
         [[ -e "${item}" || -L "${item}" ]] && remove_if_ours "${item}"
@@ -104,18 +103,9 @@ process_directory() {
 # ── Main Uninstallation ───────────────────────────────────────────────────────
 log "Removing PaperClaw symlinks..."
 
-# Claude
 process_directory "${GLOBAL_CLAUDE}/skills"
 process_directory "${GLOBAL_CLAUDE}/agents"
 
-# Codex
-process_directory "${HOME}/.codex/skills"
-
-# OpenCode
-process_directory "${HOME}/.config/opencode/skills"
-process_directory "${HOME}/.config/opencode/agents"
-
-# Summary
 if [[ $REMOVED_COUNT -eq 0 ]]; then
     info "No PaperClaw symlinks found to remove"
 else

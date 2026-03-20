@@ -1,14 +1,11 @@
 #!/usr/bin/env bash
-# install.sh — Sync PaperClaw skills/agents into global Claude directory
+# install.sh — Sync PaperClaw skills/agents into Claude Code global directory
 # Usage: ./install.sh [--skip-pull] [--dry-run]
 #
 # Behavior:
 #   1. git pull --rebase unless --skip-pull is passed
 #   2. Create symlinks for every item under .claude/skills/* → ~/.claude/skills/
 #   3. Create symlinks for every item under .claude/agents/* → ~/.claude/agents/
-#   4. If codex is installed: symlink skills → ~/.codex/skills/
-#   5. If opencode is installed: symlink skills → ~/.config/opencode/skills/
-#   6. If opencode is installed: symlink agents → ~/.config/opencode/agents/
 #
 #   Existing symlinks are updated (removed and re-created).
 #   Existing non-symlink files/dirs are NOT overwritten — a warning is printed instead.
@@ -77,12 +74,19 @@ if [[ "$SKIP_PULL" == false ]]; then
     log "Pulling latest changes from remote..."
     cd "${REPO_DIR}"
     current_branch="$(git rev-parse --abbrev-ref HEAD)"
-    
+
     if [[ "$DRY_RUN" == true ]]; then
         info "Would run: git pull --rebase --autostash origin ${current_branch}"
     else
-        git pull --rebase --autostash origin "${current_branch}"
-        log "Repository updated to $(git rev-parse --short HEAD) (${current_branch})"
+        if git remote get-url origin &>/dev/null; then
+            git pull --rebase --autostash origin "${current_branch}" || {
+                warn "git pull failed (no upstream tracking ref?). Use --skip-pull to skip."
+                exit 1
+            }
+            log "Repository updated to $(git rev-parse --short HEAD) (${current_branch})"
+        else
+            warn "No remote 'origin' found — skipping pull"
+        fi
     fi
     cd - > /dev/null
 fi
@@ -94,14 +98,12 @@ link_item() {
     local name
     name="$(basename "${src}")"
 
-    # Skip if source does not exist
     if [[ ! -e "${src}" ]]; then
         warn "Source not found, skipping: ${src}"
         return
     fi
 
     if [[ -L "${dst}" ]]; then
-        # Existing symlink
         local current_target
         current_target="$(readlink "${dst}")"
         if [[ "$DRY_RUN" == true ]]; then
@@ -112,7 +114,6 @@ link_item() {
             log "Updated  ${name}"
         fi
     elif [[ -e "${dst}" ]]; then
-        # Real file or directory
         warn "Skipped  ${name} (exists as real file/dir — remove manually to install)"
     else
         if [[ "$DRY_RUN" == true ]]; then
@@ -141,9 +142,10 @@ process_directory() {
         mkdir -p "${dst_dir}"
     fi
 
-    shopt -s nullglob
-    local items=("${src_dir}"/paperclaw*)
-    shopt -u nullglob
+    local items=()
+    while IFS= read -r -d '' item; do
+        items+=("$item")
+    done < <(find "${src_dir}" -maxdepth 1 -name 'paperclaw*' -print0 2>/dev/null | sort -z)
 
     if [[ ${#items[@]} -eq 0 ]]; then
         warn "No paperclaw* ${label} found in ${src_dir}"
@@ -159,23 +161,7 @@ process_directory() {
 # ── Main Installation ─────────────────────────────────────────────────────────
 log "Installing PaperClaw to ${GLOBAL_CLAUDE}..."
 
-# Claude
 process_directory "${SRC_SKILLS}" "${GLOBAL_CLAUDE}/skills" "skills"
 process_directory "${SRC_AGENTS}" "${GLOBAL_CLAUDE}/agents" "agents"
-
-# Codex (if installed)
-if command -v codex &> /dev/null; then
-    process_directory "${SRC_SKILLS}" "${HOME}/.codex/skills" "codex skills"
-else
-    info "codex not found — skipping"
-fi
-
-# OpenCode (if installed)
-if command -v opencode &> /dev/null; then
-    process_directory "${SRC_SKILLS}" "${HOME}/.config/opencode/skills" "opencode skills"
-    process_directory "${SRC_AGENTS}" "${HOME}/.config/opencode/agents" "opencode agents"
-else
-    info "opencode not found — skipping"
-fi
 
 log "Done! Run './uninstall.sh' to remove all symlinks."
