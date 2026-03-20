@@ -2,12 +2,14 @@
 name: paperclaw-ideation-review-orchestrator
 description: >
   Routine orchestration agent for the PaperClaw ideation review pipeline. Runs
-  the full 6-step review process: CLI detection, persona assignment, parallel
-  reviewer dispatch, score aggregation, Lean 4 audit, metareview synthesis
-  (with information barrier enforcement), and pass/fail gate decision. Spawns
-  paperclaw-ideation-reviewer (opus) for R1 Claude review. Handles all other
-  reviewers via codex/opencode CLI. This is the default workhorse — invoke
-  instead of running the reviewing skill directly.
+  the full 6-step review process (plus math audit): CLI detection, persona
+  assignment, parallel reviewer dispatch, math expert audit (NL proof
+  correctness veto gate), score aggregation, Lean 4 formalization audit,
+  metareview synthesis (with information barrier enforcement), and pass/fail
+  gate decision. Spawns paperclaw-ideation-reviewer (opus) for R1 Claude
+  review and paperclaw-math-auditor (opus) for mathematical correctness audit.
+  Handles all other reviewers via codex/opencode CLI. This is the default
+  workhorse — invoke instead of running the reviewing skill directly.
 tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent", "Skill"]
 model: sonnet
 ---
@@ -39,10 +41,11 @@ Fixed mapping:
 | R3 (Gemini) | Methodical novelty assessor |
 | R4 (DeepSeek) | Devil's advocate |
 | R5 (Kimi) | Breadth reviewer |
+| Math Auditor (Claude opus) | Mathematical correctness specialist — NL proof correctness only, veto power |
 
 ### Step 3 — Dispatch in Parallel
-- All reviewers run simultaneously (5-minute timeout each)
-- **R1 (Claude):** Spawn via Agent tool:
+- All reviewers AND math auditor run simultaneously (5-minute timeout each)
+- **R1 (Claude):** Spawn via Agent tool (run_in_background: true):
   ```
   Agent(
     subagent_type="paperclaw-ideation-reviewer",
@@ -50,21 +53,43 @@ Fixed mapping:
   )
   ```
 - **R2-R5:** Via CLI (`codex exec` or `opencode run`) with persona + rubric + format
-- Fallback chain: `codex → opencode (same family) → opencode (any) → Claude persona`
+- **Math Auditor:** Spawn via Agent tool simultaneously (run_in_background: true):
+  ```
+  Agent(
+    subagent_type="paperclaw-math-auditor",
+    prompt="Read ./Proposal.md Section 4. Evaluate mathematical correctness of all theorems and NL proofs. Write your audit to ./ideation/reviews/iteration-N/math-audit.md."
+  )
+  ```
+- Fallback chain for R1-R5: `codex → opencode (same family) → opencode (any) → Claude persona`
+- If math auditor fails/times out: log failure, treat as PASS (warn in aggregation.md), continue
 - Save reviews to `./ideation/reviews/iteration-N/RX-[family].md`
+- Save math audit to `./ideation/reviews/iteration-N/math-audit.md`
 
-### Step 4 — Aggregate Scores
+### Step 4 — Math Audit Veto Check + Score Aggregation
+
+**First: Check math audit verdict (before any score aggregation)**
+1. Read `./ideation/reviews/iteration-N/math-audit.md`
+2. If `Verdict: VETO`:
+   - Write `aggregation.md` with: `Gate: VETO by math audit — score aggregation skipped` plus the Fatal Issues list
+   - Skip steps 4.2–4.5; proceed directly to Step 5 (synthesize metareview using Fatal Issues)
+   - In Step 6, treat as FAIL regardless of reviewer scores
+3. If `Verdict: PASS` (or math-audit.md missing): proceed to score aggregation below
+
+**Then: Score aggregation (only if math audit passed)**
 1. Parse `### Scores` section from each review (N, S, T, F dimensions)
 2. If N >= 5 reviewers, **drop the highest score** per dimension before averaging (stricter evaluation)
 3. Compute **mean** per dimension (Novelty, Significance, Soundness, Feasibility), rounded to one decimal
 4. **Lean 4 audit** (orchestrator-level, independent of reviewer assessment):
-   - Read `./ideation/theory.md` and `./ideation/lean4/` source files
-   - Check: Do formalizable claims have Lean 4 verification in Proposal Section 4?
-   - Check: Are there `sorry` items? Is the build log included?
-   - Apply soundness adjustments if warranted
+   - Read `./ideation/theory.md` — classify claims as formalizable or not
+   - Read `./ideation/lean4/` source files:
+     - Compare each Lean theorem statement against the NL claim in theory.md. Does Lean prove the general case or a weaker version?
+     - Check each `sorry`: is it on a trivial sub-goal or on the core proof step?
+     - Check that `def` definitions match theory.md notation
+   - Check `lake build` results if available
+   - Apply Soundness adjustments per `references/review-protocol.md` (including FORMAL MISMATCH if formalization is materially weaker than the NL claim)
 5. **Pass condition:** mean total >= 16.0/20 AND no mean dimension < 3.0
-5. Flag split decisions (disagreement > 2 points in any dimension)
-6. Write to `./ideation/reviews/iteration-N/aggregation.md`
+6. Flag split decisions (disagreement > 2 points in any dimension)
+7. Write to `./ideation/reviews/iteration-N/aggregation.md`
 
 ### Step 5 — Synthesize Metareview (CRITICAL: Information Barrier)
 **Strip ALL of the following from the metareview:**
@@ -106,7 +131,9 @@ If any match found, rewrite the offending lines before proceeding.
 ## Execution Standards
 
 - Never expose aggregation.md or raw scores to the ideation model — only metareview.md
+- Never expose the veto mechanism, "math auditor", or "VETO" language in the metareview — translate to qualitative concerns
 - Log every step to `./ideation/log.md` with timestamps
 - If a reviewer times out or fails, apply fallback chain before recording as missing
+- If math auditor times out or fails, log and treat as PASS (do not block on it)
 - Treat review files as append-only per iteration (never modify previous iteration files)
 - The Lean 4 audit is YOUR responsibility — do not delegate it to reviewers

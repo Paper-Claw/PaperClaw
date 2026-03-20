@@ -521,11 +521,12 @@ For each formalizable claim, create a `.lean` file in `./ideation/lean4/Ideation
 /-
   Theorem: [name from theory.md]
   Source: theory.md, Section [N]
-  Claim: [natural language statement]
+  Claim (NL): [exact natural language statement from theory.md]
+  Assumptions used: [list A1, A2, ... from theory.md that appear as hypotheses below]
 -/
 import Mathlib.Topology.MetricSpace.Basic  -- import as needed
 
--- Definitions
+-- Definitions (must match theory.md Section notation exactly)
 def [relevant_definitions] := ...
 
 -- Main theorem
@@ -536,8 +537,27 @@ theorem [theorem_name] : [formal_statement] := by
 **Guidelines:**
 - Import from Mathlib for standard math objects (metric spaces, norms, probability, measure theory)
 - Prefer simple tactic proofs (`simp`, `ring`, `omega`, `linarith`, `norm_num`) over term-mode
-- Every `sorry` must have a comment explaining why it cannot be proven at this stage
+- Every `sorry` must have a comment explaining why it cannot be proven at this stage AND its type label (see 4.3.5b)
 - Register new files in `./ideation/lean4/IdeationProofs.lean` (root file that imports all modules)
+
+**Mandatory self-audit after writing each `.lean` file (before compiling):**
+
+Answer each question in writing (append to `./ideation/questions.md` under a "Lean Self-Audit" header). Fix any "no" or "problem" answers before proceeding to 4.3.4.
+
+1. **Statement match** — Does the Lean `theorem` statement express exactly the same mathematical claim as the NL statement in `theory.md`? Does it prove the full general case, or only a special case / restricted version? If the Lean statement is weaker than the NL claim, fix it to match the full claim.
+
+2. **Assumption honesty** — List every hypothesis in the Lean theorem (`h1 : ...`, `(hn : ...)`). Cross-reference with assumptions A1, A2, ... in `theory.md`. Any Lean hypothesis NOT present in the NL statement must be justified: is it a known mathematical prerequisite the NL proof implicitly uses (e.g., completeness for a fixed-point theorem, measurability for an expectation), or was it added to make the proof easier? If artificially added, remove it and strengthen the proof instead.
+
+3. **Definition consistency** — Every `def` in the Lean file must match the corresponding notation in `theory.md`. If `theory.md` defines a loss function as `ℓ(x,y) = ‖x−y‖²`, the Lean `def` must encode exactly that, not a simplified proxy.
+
+4. **sorry pre-classification** — For each `sorry` you plan to include, answer before writing it:
+   - Which step of the NL proof does this sorry cover?
+   - Is this step the central insight or key contribution of the theorem? If yes → **do not write sorry**, attempt to prove it.
+   - Is this step a standard mathematical fact? Try `exact?`, `simp`, `linarith`, `norm_num` first. Sorry only if Mathlib lookup genuinely fails.
+   - Is this step empirical (requires dataset statistics or experimental constants)? Sorry is acceptable — label `-- SORRY TYPE: Empirical`.
+   - Is this step a known result not yet in Mathlib? Sorry is acceptable — label `-- SORRY TYPE: Library gap` with a reference to a textbook or paper.
+
+**Rule:** Write the hardest proof steps first. Every sorry is a deliberate, classified decision — not a placeholder.
 
 ##### 4.3.4 — Compile and Check
 
@@ -552,10 +572,30 @@ export ELAN_HOME="$(pwd)/ideation/lean4/.elan" && export PATH="$(pwd)/ideation/l
 | Result | Classification | Action |
 |--------|---------------|--------|
 | Build succeeds, no sorry | **FULL PASS** | Proceed to Step 4.4. Log success to questions.md. |
-| Build succeeds, sorry on empirical sub-goals only | **PARTIAL PASS** | Proceed to Step 4.4. Log sorry'd items to questions.md. |
+| Build succeeds, all sorries are Empirical / Library gap / Simplification type | **PARTIAL PASS** | Run sorry classification (4.3.5b) first. If all sorries pass classification, proceed to Step 4.4. |
+| Build succeeds, but sorry covers a Core step | **CORE SORRY** | Do NOT accept as PARTIAL PASS. Attempt to prove the core step (see 4.3.5b). Counts toward retry limit. |
+| Build succeeds, but Lean theorem statement is materially weaker than the NL claim | **FORMAL MISMATCH** | Do NOT accept. Fix the Lean statement to match the NL claim, then re-prove. Does NOT count toward retry limit (it is a formalization error, not a proof failure). |
 | Build fails: type mismatch / tactic failure | **Proof Error** | Analyze error → retry (counts toward limit). |
 | Build fails: unknown identifier / import error | **Syntax Error** | Fix imports/definitions → retry (does NOT count toward limit). |
 | Build fails: timeout / OOM | **Resource Error** | Simplify theorem → retry (counts toward limit). |
+
+##### 4.3.5b — sorry Classification and Mandatory Elimination
+
+After every successful build with `sorry`, classify each sorry before accepting the result.
+
+| Sorry Type | Definition | Acceptable? | Label |
+|-----------|-----------|-------------|-------|
+| **Empirical** | Sub-goal requires experimental data (dataset statistics, measured constants) | Yes | `-- SORRY TYPE: Empirical` |
+| **Library gap** | Standard mathematical fact not yet in Mathlib; cite a reference | Yes | `-- SORRY TYPE: Library gap — [reference]` |
+| **Simplification** | Tedious algebraic manipulation that is not the key insight; max 1–2 per file | Yes | `-- SORRY TYPE: Simplification` |
+| **Core** | The central lemma that IS the paper's theoretical contribution | **No** | Must be proven |
+
+**For each Core sorry, mandatory elimination attempt:**
+1. Try up to 5 additional proof strategies (each counts toward the retry limit in 4.3.6)
+2. Try decomposing into smaller intermediate lemmas and proving each
+3. If still failing: determine whether the NL claim itself is too strong → if so, update `theory.md` to weaken the claim appropriately, then restart 4.3.3 for this theorem (triggers escalation check in 4.3.7)
+
+**Acceptance rule:** PARTIAL PASS is valid only when every sorry is Empirical, Library gap, or Simplification. A single Core sorry is a proof failure.
 
 ##### 4.3.6 — Retry Logic
 
@@ -617,7 +657,9 @@ Design a comprehensive experimental plan:
 - [x] Formalizable claims from theory.md identified and classified
 - [x] Lean 4 project exists in `./ideation/lean4/` (or skip justified for purely empirical work)
 - [x] All formalizable theorems have corresponding `.lean` files
-- [x] `lake build` passes (full or partial pass with documented sorry items)
+- [x] Self-audit completed for each `.lean` file (statement match, assumption honesty, definition consistency, sorry pre-classification) — logged to questions.md
+- [x] `lake build` passes (FULL PASS or PARTIAL PASS — no FORMAL MISMATCH, no CORE SORRY)
+- [x] Every sorry classified by type (Empirical / Library gap / Simplification); no Core sorry remains
 - [x] Every Lean 4 attempt logged to `./ideation/questions.md`
 - [x] Method description names specific techniques with enough detail for implementation
 - [x] At least 1 dataset and 1 metric named explicitly

@@ -41,14 +41,18 @@ When this skill is triggered (state.md = review-pending), invoke `paperclaw-idea
 ```mermaid
 flowchart TD
     TRIGGER["state.md = review-pending"] --> S1["Step 1: Detect Reviewers\nQuery CLI tools & models"]
-    S1 --> S2["Step 2: Assign Personas\n5 unique reviewer roles"]
-    S2 --> S3["Step 3: Dispatch in Parallel\n5min timeout, fallback chain"]
-    S3 --> S4["Step 4: Aggregate Scores\nMean per dimension (drop highest if N≥5) + Lean 4 audit"]
+    S1 --> S2["Step 2: Assign Personas\n5 reviewer roles + Math Auditor"]
+    S2 --> S3["Step 3: Dispatch in Parallel\nR1-R5: 5min timeout, fallback chain"]
+    S3 --> S35["Step 3.5: Math Auditor\npaperclaw-math-auditor (opus)\nNL proof correctness only"]
+    S35 --> VETO{"Math Audit\nVerdict?"}
+    VETO -->|"VETO"| FAILV["Skip aggregation → FAIL path\nFatal Issues → metareview"]
+    VETO -->|"PASS"| S4["Step 4: Aggregate Scores\nMean per dimension (drop highest if N≥5) + Lean 4 audit"]
     S4 --> S5["Step 5: Synthesize Feedback\nStrip scores → qualitative themes"]
     S5 --> S6{"Step 6: Gate Decision"}
     S6 -->|"PASS (≥16/20, all dims ≥3)"| PASS["state → Done\nInvoke ideation for final outputs"]
     S6 -->|"FAIL (iter < 10)"| FAIL["state → revision-N\nInvoke ideation with metareview"]
     S6 -->|"FAIL (iter = 10)"| FORCE["state → Done (with caveat)\nInvoke ideation for final outputs"]
+    FAILV --> FAIL
     FAIL --> TRIGGER
 ```
 
@@ -242,6 +246,52 @@ Save each review to `./ideation/reviews/iteration-N/RX-[family].md`.
 
 ---
 
+## Step 3.5: Math Expert Audit
+
+### Goal
+
+Run an independent mathematical correctness review of the NL proofs in Proposal.md, in parallel with the regular reviewer panel. This step runs concurrently with Step 3 — dispatch both at the same time.
+
+### Steps
+
+#### 3.5.1: Dispatch Math Auditor
+
+Launch via Agent tool simultaneously with R1-R5 (use `run_in_background: true`):
+
+```
+Agent(
+  subagent_type="paperclaw-math-auditor",
+  prompt="Read ./Proposal.md Section 4. Evaluate mathematical correctness of all theorems and NL proofs. Write your audit to ./ideation/reviews/iteration-N/math-audit.md following the output format in your instructions."
+)
+```
+
+**Timeout:** 5 minutes. If the agent fails or times out, log the failure and proceed without math audit (treat as PASS with a warning note in aggregation.md).
+
+#### 3.5.2: Await Result
+
+After all reviewers (R1-R5 and math auditor) have completed or timed out, read `./ideation/reviews/iteration-N/math-audit.md`.
+
+#### 3.5.3: Apply Veto Gate
+
+1. Check the `## Verdict` line in `math-audit.md`
+2. **If `Verdict: VETO`:**
+   - Do NOT proceed to Step 4 score aggregation
+   - Write `aggregation.md` with: `Gate: VETO by math audit — score aggregation skipped` plus the Fatal Issues list
+   - Translate Fatal Issues into qualitative metareview language (strip "VETO", "math auditor", mechanism language — present as "Reviewers identified mathematical errors in the theoretical analysis: ...")
+   - Include Non-fatal Concerns as additional concerns if present
+   - Proceed directly to Step 5 (synthesize metareview) then Step 6 FAIL path
+3. **If `Verdict: PASS`:**
+   - Include any Non-fatal Concerns from math-audit.md as additional concerns in Step 5
+   - Proceed normally to Step 4
+
+### Completion Criteria
+
+- [x] `math-audit.md` written (or failure logged)
+- [x] Veto gate checked before score aggregation
+- [x] If VETO: aggregation skipped, fatal issues translated to metareview
+
+---
+
 ## Step 4: Aggregate Scores
 
 ### Goal
@@ -378,13 +428,14 @@ Let **N** = current `Iteration` value read from `./ideation/state.md` **before m
 ## Key Interaction Principles
 
 1. **Independence** — reviewers evaluate Proposal.md only, never working files
-2. **Information barrier** — metareview must contain zero scores, zero dimension names, zero threshold language
+2. **Information barrier** — metareview must contain zero scores, zero dimension names, zero threshold language, zero veto mechanism language
 3. **Minimum panel** — at least 3 valid reviews before aggregation
 4. **Mean aggregation** — uses all reviewer signal; if N >= 5, drop the highest score per dimension for stricter evaluation
 5. **Dual Lean 4 audit** — reviewers assess from Proposal.md; orchestrator verifies from source files
-6. **State-driven communication** — gate result communicated only via state.md, never in metareview
-7. **Fallback resilience** — follow the fallback chain until 3 reviews are collected
-8. **Cross-invocation via Skill tool** — all ideation invocations must use the Skill tool explicitly
+6. **Math expert veto** — math auditor runs in parallel; VETO bypasses score aggregation and triggers FAIL directly
+7. **State-driven communication** — gate result communicated only via state.md, never in metareview
+8. **Fallback resilience** — follow the fallback chain until 3 reviews are collected
+9. **Cross-invocation via Skill tool** — all ideation invocations must use the Skill tool explicitly
 
 ---
 
