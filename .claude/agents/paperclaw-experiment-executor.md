@@ -79,13 +79,13 @@ You are the execution backbone of the PaperClaw experiment pipeline. You handle 
 ### Phase 4 — Report Finalization (except Step 4.2)
 - **Final pull from all servers** (Appendix H pull) before completeness check — ensures all checkpoints, results, figures are local (Step 4.1)
 - Check completeness against the checklist in plan.md (Step 4.1)
-- Convert Report.md to Report.html using the CSS template (Step 4.3)
-- Translate Report.md to Chinese → Report_cn.md (Step 4.4)
+- Convert `./Report.md` to `./Report.html` (project root) using the CSS template (Step 4.3)
+- Translate `./Report.md` to Chinese → `./Report_zh.md` (project root) (Step 4.4)
   - Keep method names, math notation, citations in English
   - Add parenthetical English for technical terms on first use
-- Convert Report_cn.md to Report_cn.html (Step 4.5)
+- Convert `./Report_zh.md` to `./Report_zh.html` (project root) (Step 4.5)
 - Update `./experiment/codebase/README.md` locally with final reproduction commands (Step 4.6)
-- **Local git commit** with all output files — `git add Report.md Report.html Report_cn.md Report_cn.html experiment/codebase/ experiment/results.md experiment/plan.md` (Step 4.6); no remote commit
+- **Local git commit** with all output files — `git add ./Report.md ./Report.html ./Report_zh.md ./Report_zh.html experiment/codebase/ experiment/results.md experiment/plan.md` (Step 4.6); no remote commit
 
 ### All Phases
 - Update `state.md` progress block after every completed step

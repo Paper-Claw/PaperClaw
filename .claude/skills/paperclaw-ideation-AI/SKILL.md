@@ -71,7 +71,7 @@ flowchart TD
     HANDOFF --> REVIEW{Review Panel\n3-5 reviewers}
     REVIEW -->|FAIL| REVISE[Read metareview.md\nRevise Proposal\nWrite feedback.md]
     REVISE -->|max 10 rounds| REVIEW
-    REVIEW -->|PASS| FINAL[Generate final outputs:\nProposal_cn.md, HTML, HTML_CN, BibTeX]
+    REVIEW -->|PASS| FINAL[Generate final outputs:\nProposal_zh.md, HTML, HTML_CN, BibTeX]
 ```
 
 Persist loop state to `./ideation/state.md` so the session can be resumed. All auto-decisions are logged to `./ideation/questions.md` for post-hoc review.
@@ -92,27 +92,75 @@ When starting a new session, check if `./ideation/state.md` exists:
    | `0`–`4` | Resume from that phase |
    | `review-pending` | Generate draft Proposal.md if missing, then invoke reviewing skill |
    | `revision-N` | Read `./ideation/reviews/iteration-N/metareview.md` and proceed with revision |
-   | `generating-outputs` | The reviewing skill already approved; go directly to **Research Proposal Output** section to generate `Proposal_cn.md`, `Proposal.html`, `Proposal_cn.html`, `reference.bib`. Do NOT re-invoke the reviewing skill. |
-   | `Done` | All outputs complete; report status to user and exit |
+   | `user-revision` | Read `UserRevisionCycle` (C) and `UserRevisionRound` (R) from state.md; check `./ideation/reviews/user-C-R/` for `metareview.md` (review FAIL continuation) or `user_feedback.md` (fresh cycle entry); proceed with user-initiated revision |
+   | `generating-outputs` | The reviewing skill already approved; go directly to **Research Proposal Output** section to generate `Proposal_zh.md`, `Proposal.html`, `Proposal_zh.html`, `reference.bib`. Do NOT re-invoke the reviewing skill. |
+   | `Done` | If the user provides revision feedback in this invocation → enter **User-Initiated Revision Protocol**. Otherwise → report status and exit. |
 
-5. **If review-pending or revision-N** → also read `./ideation/reviews/` for review history
+5. **If review-pending, revision-N, or user-revision** → also read `./ideation/reviews/` for review history
 
 If the user wants to restart a phase, they must explicitly say so.
 
-### Override Protocol
+### User Revision Protocol
 
-After reviewing the Proposal and `./ideation/questions.md`, the user can re-invoke this skill with override instructions:
+When the user provides feedback on an existing Proposal (state = `Done` or any completed phase), this protocol handles all types of user-initiated changes — whether overriding auto-decisions or giving text-level revision feedback. Both follow the same flow: apply changes → re-run from affected phase → review loop → final outputs.
 
+**Entry condition:** User invokes the skill with revision instructions, decision overrides, or feedback while state ≠ `revision-N`.
+
+**Examples:**
 ```
 "重新运行 ideation，修改决策 #2 为 Direction B"
 "Re-run ideation, override decision #3: use contrastive learning instead"
+"Section 5 的理论证明不够严谨，需要补充 convergence analysis"
+"实验设计缺少 ablation study，请补充"
 ```
 
-1. Read `./ideation/questions.md` — load all prior auto-decisions
-2. Apply user overrides to the specified decision numbers
-3. Determine the **earliest affected phase** (e.g., overriding direction → Phase 2)
-4. Re-run from that phase forward, keeping unaffected prior decisions
-5. Regenerate all Proposal files with updated Section 9
+**State variables:**
+
+| Variable | Meaning | Reset? |
+|----------|---------|--------|
+| `UserRevisionCycle` (C) | Which user-initiated revision cycle (1st, 2nd, …) | Never — increments each time user initiates a new revision |
+| `UserRevisionRound` (R) | Which review round within the current cycle | Resets to 1 each new cycle; increments on each review FAIL |
+| `UserRevisionBudget` (B) | Remaining review attempts in the current cycle | Resets to 3 each new cycle; decrements on each review FAIL |
+
+**Directory rule:** `./ideation/reviews/user-C-R/` — e.g., `user-2-3/` = 2nd user revision, 3rd review round.
+
+**Steps:**
+
+1. Read current state.md — record existing `UserRevisionCycle` (default 0 if absent), set C = old + 1, R = 1, B = 3
+2. Save user feedback verbatim to `./ideation/reviews/user-C-R/user_feedback.md`
+3. Update state.md:
+   - `Phase: user-revision`
+   - `UserRevisionCycle: C`
+   - `UserRevisionRound: R`
+   - `UserRevisionBudget: B`
+4. **Determine revision type and apply changes:**
+   - **Decision override** (user references `questions.md` decision numbers or explicitly requests changing direction/method/dataset):
+     1. Read `./ideation/questions.md` — load all prior auto-decisions
+     2. Apply user overrides to the specified decision numbers
+     3. Determine the **earliest affected phase** (e.g., overriding direction → Phase 2)
+     4. Re-run from that phase forward, keeping unaffected prior decisions
+     5. Regenerate `./Proposal.md`
+   - **Text-level feedback** (user gives revision instructions on Proposal content):
+     1. Invoke **Task E** (strategist revision task) using `./ideation/reviews/user-C-R/user_feedback.md` as feedback source. Mark it `Source: user-initiated` in the file header so the review orchestrator knows not to apply the 10-round hard stop.
+     2. Task E determines which phases to revisit (see `references/iteration-loop.md`), re-runs from the earliest affected phase forward, and regenerates `./Proposal.md`
+   - **If ambiguous** → use `AskUserQuestion` to clarify: "您希望修改 questions.md 中的自动决策（从受影响阶段重跑），还是对 Proposal 文本进行修改？"
+5. Write `./ideation/reviews/user-C-R/feedback.md` documenting changes made
+6. Set state to `Phase: review-pending` → main session enters the review loop (see Handoff & Review Loop)
+
+**Review budget within this cycle:**
+
+Each review attempt within this user-initiated cycle uses `UserRevisionBudget` (not the global `Iteration`):
+- Review FAIL → set R = R+1, B = B-1 in state.md; metareview and aggregation are saved to `user-C-R/` (using the **old** R before increment); revision using metareview from that directory
+- Review PASS → generate final outputs, set state to `Done`
+- B reaches 0 → force generate final outputs with caveat note (same behavior as 10-round exhaustion)
+
+**Directory naming:** Each review round gets its own `user-C-R/` directory. C identifies the cycle, R identifies the round within it. Both are readable directly from state.md on session restart — no derived counters.
+
+```
+Example: user initiates revision twice
+  First cycle  (C=1, B=3→2): user-1-1/ → FAIL → user-1-1/metareview → revision → user-1-2/feedback → PASS → Done
+  Second cycle (C=2, B=3→2→1→0): user-2-1/ → FAIL → user-2-1/metareview → user-2-2/feedback → FAIL → user-2-2/metareview → user-2-3/feedback → FAIL → Budget exhausted → Done (with caveat)
+```
 
 ---
 
@@ -136,9 +184,9 @@ Final outputs in project root (`./`):
 | File | Format | Language |
 |------|--------|----------|
 | `Proposal.md` | Markdown | English |
-| `Proposal_cn.md` | Markdown | Chinese |
+| `Proposal_zh.md` | Markdown | Chinese |
 | `Proposal.html` | HTML | English |
-| `Proposal_cn.html` | HTML | Chinese |
+| `Proposal_zh.html` | HTML | Chinese |
 | `reference.bib` | BibTeX | N/A |
 
 **Update state.md** at: phase start, phase end, Lean 4 attempts, review handoff, revision start.
@@ -179,7 +227,7 @@ See **Appendix A** for the full auto-decision table showing what gets auto-decid
 | Phase 4 | `Write` | Log SMART RQ and method design decisions to `./ideation/questions.md` |
 | Handoff | `Write` | Generate draft `./Proposal.md`, update state to review-pending |
 | Revision | `Read` | Read `./ideation/reviews/iteration-N/metareview.md` from review panel |
-| Output | `Write` | Generate final `./Proposal.md`, `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, `./reference.bib` (after review PASS) |
+| Output | `Write` | Generate final `./Proposal.md`, `./Proposal_zh.md`, `./Proposal.html`, `./Proposal_zh.html`, `./reference.bib` (after review PASS) |
 | Output | `WebSearch` | Search for official BibTeX entries (DBLP, Semantic Scholar) for `./reference.bib` |
 | All | `TodoWrite` | Track current phase and progress within each phase |
 
@@ -216,7 +264,7 @@ Example search queries — see `references/domain.md` "Example Search Queries" s
 **This step is mandatory.** After completing the field survey, write and present a structured background briefing to the user. The briefing educates the user on the current state of the field and provides context for the auto-inferred decisions that follow. Write in the user's language.
 
 ```markdown
-## 🔍 Field Background Briefing: [Topic Area]
+## Field Background Briefing: [Topic Area]
 
 ### Current Landscape
 [2-3 paragraphs summarizing: What is this field about? What are the dominant approaches?
@@ -670,39 +718,90 @@ Design a comprehensive experimental plan:
 
 ## Handoff & Review Loop
 
-### Proposal Handoff
+### Architecture: Main Session Orchestration
 
-After Phase 4 is complete, generate `./Proposal.md` (draft version) and hand off to the independent review panel.
+The ideation pipeline runs in the **main conversation session**. The main session skill orchestrates the executor→review→revision cycle using structured return values — agents never invoke skills directly.
+
+**Flow:**
+```
+Main Session Skill
+  │
+  ├─► Spawn executor agent → returns NEXT_ACTION: review-pending
+  │
+  ├─► Invoke reviewing skill (paperclaw-ideation-reviewing-AI)
+  │     └─► Spawns review-orchestrator agent → returns GATE: PASS/FAIL/...
+  │
+  ├─► If GATE: FAIL → spawn executor agent (revision) → returns NEXT_ACTION: review-pending → loop
+  │
+  ├─► If GATE: PASS or FORCE-PROCEED → spawn executor agent (generate outputs) → returns NEXT_ACTION: outputs-generated
+  │
+  └─► Mark Done
+```
+
+### Main Session Loop
+
+After the executor agent returns `NEXT_ACTION: review-pending`, the main session skill runs this loop:
+
+```
+LOOP:
+  1. Invoke paperclaw-ideation-reviewing-AI skill
+     - The skill spawns the review-orchestrator agent
+     - The orchestrator returns a gate result: GATE: PASS | FAIL | USER-REVISION-FAIL | FORCE-PROCEED
+
+  2. Parse the gate result:
+     - GATE: PASS →
+         Spawn executor agent with: "generate final outputs"
+         Wait for NEXT_ACTION: outputs-generated
+         Update state.md: Phase: Done
+         EXIT LOOP
+
+     - GATE: FAIL | iteration=N | metareview=<path> →
+         Spawn executor agent with: "Revision needed. Read metareview at <path>. Revise Proposal.md and set state to review-pending."
+         Wait for NEXT_ACTION: review-pending
+         CONTINUE LOOP
+
+     - GATE: USER-REVISION-FAIL | cycle=C | round=R | metareview=<path> →
+         Spawn executor agent with: "User-revision feedback at <path>. Revise Proposal.md and set state to review-pending."
+         Wait for NEXT_ACTION: review-pending
+         CONTINUE LOOP
+
+     - GATE: FORCE-PROCEED | reason=<reason> →
+         Spawn executor agent with: "generate final outputs (force-proceed: <reason>)"
+         Wait for NEXT_ACTION: outputs-generated
+         Update state.md: Phase: Done
+         EXIT LOOP
+```
+
+### Proposal Handoff (executor responsibility)
+
+After Phase 4 is complete, the executor generates `./Proposal.md` (draft version) and returns control to the main session.
 
 **CRITICAL: Proposal.md is the ONLY document the review panel sees.** Reviewers cannot access `./ideation/theory.md`, `./ideation/lean4/`, `./ideation/literature.md`, or any working files. The Proposal must be **completely self-contained** with full theory, complete proofs, full Lean 4 source code, and comprehensive literature analysis. Do NOT summarize or abbreviate — include everything the reviewers need to evaluate the proposal's quality.
 
 1. Write `./ideation/state.md` with `Phase: review-pending`
 2. Append to `./ideation/log.md`: "Phase 4 complete. Proposal draft generated. Handing off to review panel."
-3. Output: "Draft Proposal generated. Submitting to independent review panel."
-4. **MANDATORY: Invoke the `paperclaw-ideation-reviewing-AI` skill immediately.** Do NOT evaluate the proposal yourself. Do NOT score it on any dimensions. The reviewing skill reads `./ideation/state.md`, detects `Phase: review-pending`, and takes over.
+3. **Return** `NEXT_ACTION: review-pending` to the main session. Do NOT invoke any reviewing skill — the main session handles that.
 
-> **This step is non-negotiable.** The ideation pipeline is incomplete without review. If the reviewing skill is not invoked here, the proposal will never be scored or approved.
+### Final Output Generation (executor responsibility, after PASS or FORCE-PROCEED)
 
-### Final Output Generation (invoked by reviewing skill after PASS)
-
-When invoked by the reviewing skill with an instruction to generate final output files (after review PASS or force-proceed), skip all phases and go directly to the **Research Proposal Output** section below. Read `./Proposal.md` and generate:
-- `./Proposal_cn.md` — Chinese translation
+When the main session instructs the executor to generate final output files, skip all phases and go directly to the **Research Proposal Output** section below. Read `./Proposal.md` and generate:
+- `./Proposal_zh.md` — Chinese translation
 - `./Proposal.html` — English, styled HTML with KaTeX
-- `./Proposal_cn.html` — Chinese, styled HTML with KaTeX
+- `./Proposal_zh.html` — Chinese, styled HTML with KaTeX
 - `./reference.bib` — BibTeX entries for all cited papers
 
-Do NOT alter `./Proposal.md`. Follow the rendering rules in the Research Proposal Output section exactly.
+Do NOT alter `./Proposal.md`. Follow the rendering rules in the Research Proposal Output section exactly. After generation, **return** `NEXT_ACTION: outputs-generated` to the main session.
 
-### Revision from Reviewer Feedback
+### Revision from Reviewer Feedback (executor responsibility)
 
-If the review panel signals revision via `./ideation/state.md` (`Phase: revision-N`), the feedback is at `./ideation/reviews/iteration-N/metareview.md`:
+When the main session instructs the executor to revise (after GATE: FAIL or USER-REVISION-FAIL), read the metareview at the path provided:
 
-1. Read `./ideation/reviews/iteration-N/metareview.md` carefully — focus on the **Primary Concerns**, **Specific Suggestions**, and **Questions to Address in Revision** sections. The metareview should contain only qualitative feedback (no numeric scores). If any numeric scores appear, disregard them — they should not be present.
+1. Read the metareview carefully — focus on the **Primary Concerns**, **Specific Suggestions**, and **Questions to Address in Revision** sections. The metareview should contain only qualitative feedback (no numeric scores). If any numeric scores appear, disregard them — they should not be present.
 2. Identify the primary concerns raised by reviewers
 3. For each concern, determine which phase to revisit (see `references/iteration-loop.md` for the feedback-to-phase mapping)
 4. Re-run from the earliest affected phase forward
 5. Regenerate `./Proposal.md` draft
-6. **Write `./ideation/reviews/iteration-N/feedback.md`** documenting the changes made:
+6. **Write feedback.md** in the appropriate review directory documenting the changes made:
 
 ```markdown
 # Revision Feedback — Iteration N
@@ -724,9 +823,9 @@ If the review panel signals revision via `./ideation/state.md` (`Phase: revision
 - [concern]: [why it could not be fully addressed and what was done instead]
 ```
 
-7. Set state to `Phase: review-pending` and invoke `paperclaw-ideation-reviewing-AI` again for the next review round.
+7. Set state to `Phase: review-pending` and **return** `NEXT_ACTION: review-pending` to the main session.
 
-The review panel controls the iteration count and pass/fail decision — you simply respond to their feedback and resubmit.
+The review panel controls the iteration count and pass/fail decision — the executor simply responds to their feedback and resubmits.
 
 ---
 
@@ -739,12 +838,12 @@ Generated after the independent review panel signals PASS (or after max iteratio
 | File | Format | Language | Purpose |
 |------|--------|----------|---------|
 | `./Proposal.md` | Markdown | English | Source of truth, version-controlled |
-| `./Proposal_cn.md` | Markdown | Chinese | Chinese translation for local reading and paper writing |
+| `./Proposal_zh.md` | Markdown | Chinese | Chinese translation for local reading and paper writing |
 | `./Proposal.html` | HTML | English | Readable standalone document with styling |
-| `./Proposal_cn.html` | HTML | Chinese | Chinese translation for local collaboration |
+| `./Proposal_zh.html` | HTML | Chinese | Chinese translation for local collaboration |
 | `./reference.bib` | BibTeX | N/A | BibTeX entries for all cited papers |
 
-`Proposal_cn.md` is a direct Chinese translation of `Proposal.md`. Keep all method names, dataset names, mathematical notation, and citations in English. Use parenthetical English for key technical terms, e.g., "消融实验 (Ablation Study)". All five Proposal files share the same 10-section structure (Sections 1-8 are content; Section 9 is the auto-pilot decision log; Section 10 is the reference list).
+`Proposal_zh.md` is a direct Chinese translation of `Proposal.md`. Keep all method names, dataset names, mathematical notation, and citations in English. Use parenthetical English for key technical terms, e.g., "消融实验 (Ablation Study)". All five Proposal files share the same 10-section structure (Sections 1-8 are content; Section 9 is the auto-pilot decision log; Section 10 is the reference list).
 
 ### reference.bib Generation
 
@@ -1094,9 +1193,9 @@ this section — it is filled in by the orchestrator.]
 
 ### D. HTML Rendering Rules
 
-> **Template file:** `references/proposal-html-template.html` contains the authoritative HTML/CSS template with KaTeX, Mermaid, and collapsible section styling. Use it as the base when generating Proposal.html and Proposal_cn.html.
+> **Template file:** `references/proposal-html-template.html` contains the authoritative HTML/CSS template with KaTeX, Mermaid, and collapsible section styling. Use it as the base when generating Proposal.html and Proposal_zh.html.
 
-The HTML files (`Proposal.html` and `Proposal_cn.html`) must include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
+The HTML files (`Proposal.html` and `Proposal_zh.html`) must include basic CSS styling (clean typography, section numbering, table borders, math rendering via KaTeX CDN) for readability.
 
 #### Collapsible Sections
 
@@ -1149,11 +1248,14 @@ Overwrite this file after every phase transition.
 # Ideation State
 
 **Idea:** [one-line summary]
-**Phase:** [0 / 1 / 2 / 2.5 / 3 / 4 / review-pending / revision-N / generating-outputs / Done]
+**Phase:** [0 / 1 / 2 / 2.5 / 3 / 4 / review-pending / revision-N / user-revision / generating-outputs / Done]
 **Iteration:** [N]
 **Direction:** [chosen direction title, or "TBD"]
 **Lean4Status:** [not_started / in_progress / pass / partial_pass / fail]
 **Lean4Attempt:** [0-10]
+**UserRevisionCycle:** [C — which user-initiated revision cycle; increments each time user initiates a new revision; absent until first user-initiated revision]
+**UserRevisionRound:** [R — which review round within current cycle; resets to 1 each new cycle; increments on FAIL]
+**UserRevisionBudget:** [3 / 2 / 1 / 0 — remaining review attempts in current cycle; resets to 3 each new cycle]
 **Next Action:** [what to do when this session resumes]
 **Updated:** [YYYY-MM-DD]
 ```
@@ -1296,7 +1398,7 @@ Append new decisions as they are made. Never overwrite existing entries. Source 
 8. **Feasibility-first selection** — when choosing between options, prioritize feasibility > significance > low risk > novelty
 9. **YAGNI for scope** — cut any claim or experiment that is not needed to demonstrate the core insight
 10. **Resume from state** — always check `./ideation/state.md` and `./ideation/questions.md` before starting; append to `./ideation/log.md` after every phase
-11. **Language matching** — detect the language of the user's message and use that language for all working documents (state.md, log.md, literature.md, theory.md, questions.md) and conversational output. Proposal files follow fixed language rules: Proposal.md/Proposal.html = English; Proposal_cn.md/Proposal_cn.html = Chinese; reference.bib = language-neutral.
+11. **Language matching** — detect the language of the user's message and use that language for all working documents (state.md, log.md, literature.md, theory.md, questions.md) and conversational output. Proposal files follow fixed language rules: Proposal.md/Proposal.html = English; Proposal_zh.md/Proposal_zh.html = Chinese; reference.bib = language-neutral.
 12. **Override support** — when re-invoked with override instructions, read `./ideation/questions.md`, apply overrides, and re-run from the earliest affected phase
 
 ---
@@ -1310,7 +1412,7 @@ These files are co-located with this skill. Try paths in order until one succeed
 Load on demand:
 - `<ref-dir>/domain.md` — **domain configuration** (target venues, databases, resource estimates, domain examples). Replace this file to adapt the skill for a different research domain.
 - `<ref-dir>/proposal-template.md` — **Proposal.md structure skeleton** (10-section template with appendices). The authoritative structure for generated Proposals.
-- `<ref-dir>/proposal-html-template.html` — **HTML/CSS template** for Proposal.html / Proposal_cn.html (KaTeX math, Mermaid diagrams, collapsible proofs/Lean 4 code).
+- `<ref-dir>/proposal-html-template.html` — **HTML/CSS template** for Proposal.html / Proposal_zh.html (KaTeX math, Mermaid diagrams, collapsible proofs/Lean 4 code).
 - `<ref-dir>/iteration-loop.md` — detailed loop logic and loop-back decision tree
 - `<ref-dir>/gap-analysis-guide.md` — 5 gap types, analysis dimensions, examples
 - `<ref-dir>/5w1h-framework.md` — 5W1H framework for Phase 0

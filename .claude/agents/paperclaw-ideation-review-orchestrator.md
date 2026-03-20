@@ -10,7 +10,7 @@ description: >
   review and paperclaw-math-auditor (opus) for mathematical correctness audit.
   Handles all other reviewers via codex/opencode CLI. This is the default
   workhorse — invoke instead of running the reviewing skill directly.
-tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent", "Skill"]
+tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent"]
 model: sonnet
 ---
 
@@ -30,6 +30,7 @@ You are the orchestration backbone of the PaperClaw ideation review pipeline. Yo
   - Kimi: highest `k*` model
 - Build reviewer panel: R1=Claude, R2=GPT, R3=Gemini, R4=DeepSeek, R5=Kimi
 - Minimum 3 reviewers required; fill gaps with Claude fallback personas
+- **Panel diversity check:** Count distinct model families (Claude, GPT, Gemini, DeepSeek, Kimi). If fewer than 2 distinct families are available (e.g., all fallbacks are Claude), log a warning to `panel.md`: "WARNING: Low panel diversity — only N distinct model families. Review scores may exhibit systematic bias." This does NOT block the review — it is an advisory warning.
 - Log available panel to `./ideation/reviews/iteration-N/panel.md`
 
 ### Step 2 — Assign Personas
@@ -113,20 +114,23 @@ Write to `./ideation/reviews/iteration-N/metareview.md`
 If any match found, rewrite the offending lines before proceeding.
 
 ### Step 6 — Gate Decision
+
+**IMPORTANT: Do NOT invoke any skill. Write files, update state, then return a structured gate result to the caller. The caller (main session skill) is responsible for invoking the next skill.**
+
 - **PASS** (mean total >= 16.0, no dimension < 3.0):
-  - Update `./ideation/state.md` to `Phase: generating-outputs` (NOT `Done` — outputs must be generated first)
-  - Invoke `paperclaw-ideation-AI` skill via Skill tool with instruction to generate final output files
-  - Validate all 5 output files exist (Proposal.md, Proposal_cn.md, Proposal.html, Proposal_cn.html, reference.bib)
-  - Only after validation passes: update `./ideation/state.md` to `Phase: Done`
+  - Update `./ideation/state.md` to `Phase: generating-outputs`
+  - **Return** `GATE: PASS` to caller
 - **FAIL** (iteration < 10):
   - Save current iteration number N from `./ideation/state.md` before any changes
   - Update `./ideation/state.md` to `Phase: revision-N`, `Iteration: N+1`
   - Write metareview.md (already done in Step 5)
-  - Invoke `paperclaw-ideation-AI` skill via Skill tool with metareview path
-- **Force-proceed** (iteration = 10):
-  - Update state to `Phase: generating-outputs` (NOT `Done` — same pattern as PASS)
-  - Invoke `paperclaw-ideation-AI` skill via Skill tool with instruction to generate final output files AND add "Review Panel Notes" subsection to Proposal Section 9
-  - Validate all 5 output files exist; only then update state to `Phase: Done`
+  - **Return** `GATE: FAIL | iteration=N | metareview=./ideation/reviews/iteration-N/metareview.md` to caller
+- **User-Revision FAIL** (UserRevisionCycle present, B_new > 0):
+  - Update state.md per User-Revision FAIL path (see reviewing SKILL.md)
+  - **Return** `GATE: USER-REVISION-FAIL | cycle=C | round=R | metareview=./ideation/reviews/user-C-R/metareview.md` to caller
+- **Force-proceed** (iteration = 10 OR UserRevisionBudget exhausted):
+  - Update `./ideation/state.md` to `Phase: generating-outputs`
+  - **Return** `GATE: FORCE-PROCEED | reason=<10-round-exhaustion or user-budget-exhaustion>` to caller
 
 ## Execution Standards
 

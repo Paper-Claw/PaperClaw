@@ -378,50 +378,62 @@ Write to `./ideation/reviews/iteration-N/metareview.md` using the format in `ref
 
 ### Goal
 
-Determine pass/fail, update state, and invoke the ideation skill for next action.
+Determine pass/fail, update state, and **return a structured gate result to the caller**. The caller (main session skill) is responsible for orchestrating the next action.
+
+**IMPORTANT: Do NOT invoke any skill from this step. Write files, update state, then return a structured gate result.**
 
 ### PASS (mean total >= 16.0, no mean dim < 3.0)
 
 1. Write aggregation report to `./ideation/reviews/iteration-N/aggregation.md`
-2. Update `./ideation/state.md`: `Phase: generating-outputs` (NOT `Done` yet — output generation must complete before marking Done)
-3. **Invoke the ideation skill** via the Skill tool with this instruction:
-   > "The review panel has issued a PASS. Read `./Proposal.md` and generate the four final output files: `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, and `./reference.bib`. Follow the HTML rendering rules in the Research Proposal Output section exactly. Do not alter `./Proposal.md`."
-4. **Validate outputs** — verify all 5 files exist and are non-empty:
-   ```bash
-   for f in ./Proposal.md ./Proposal_cn.md ./Proposal.html ./Proposal_cn.html ./reference.bib; do
-     test -s "$f" && echo "OK: $f" || echo "MISSING: $f"
-   done
-   ```
-5. If any file is missing: re-issue generation instruction for that specific file. Retry up to 2 times.
-6. Update `./ideation/state.md`: `Phase: Done` — only after all output files are validated.
+2. Update `./ideation/state.md`: `Phase: generating-outputs`
+3. **Return** `GATE: PASS` to caller
 
-### FAIL (below threshold, iteration < 10)
+### FAIL (below threshold)
+
+First, check `./ideation/state.md` to determine which review cycle this is:
+
+- **If `UserRevisionCycle` field is present** → this is a **user-initiated revision cycle**. Follow the **User-Revision FAIL** path below.
+- **Otherwise** → this is the **original review loop**. Follow the **Standard FAIL** path below.
+
+#### Standard FAIL (original review loop, iteration < 10)
 
 Let **N** = current `Iteration` value read from `./ideation/state.md` **before making any changes**. All subsequent file paths and state updates use this saved value of N.
 
 1. Write metareview to `./ideation/reviews/iteration-N/metareview.md` (qualitative only) — using N saved above
 2. Write aggregation report to `./ideation/reviews/iteration-N/aggregation.md` (scores, for orchestrator record) — using N saved above
 3. Update `./ideation/state.md`: set `Phase: revision-N` and `Iteration: N+1` — where N is the value saved above
-4. **Invoke the ideation skill** via the Skill tool with this instruction (substitute the actual value of N):
-   > "Review panel feedback for iteration N is at `./ideation/reviews/iteration-N/metareview.md`. Read the Primary Concerns, Specific Suggestions, and Questions sections. Revise `./Proposal.md` to address these concerns, then write `./ideation/reviews/iteration-N/feedback.md` documenting what changes you made and which concerns each change addresses. After writing feedback.md, set state to `Phase: review-pending`."
-5. If N+1 > 10: force-proceed instead (see below)
+4. **Return** `GATE: FAIL | iteration=N | metareview=./ideation/reviews/iteration-N/metareview.md` to caller
+5. If N+1 > 10: force-proceed instead (see Standard Force-Proceed below)
 
-### Force-Proceed (after 10 iterations)
+#### User-Revision FAIL (user-initiated revision cycle)
+
+Read **C** = `UserRevisionCycle`, **R** = `UserRevisionRound`, **B** = `UserRevisionBudget` from `./ideation/state.md` before making any changes.
+
+1. Write metareview to `./ideation/reviews/user-C-R/metareview.md` (qualitative only) — using C and R saved above
+2. Write aggregation report to `./ideation/reviews/user-C-R/aggregation.md` (scores, for orchestrator record)
+3. Set R_new = R+1, B_new = B-1
+4. Update `./ideation/state.md`: set `Phase: user-revision`, `UserRevisionRound: R_new`, `UserRevisionBudget: B_new`
+5. If B_new == 0: force-proceed (see User-Revision Force-Proceed below)
+6. Otherwise, **return** `GATE: USER-REVISION-FAIL | cycle=C | round=R | metareview=./ideation/reviews/user-C-R/metareview.md` to caller
+
+### Standard Force-Proceed (after 10 iterations)
 
 1. Add caveat to metareview: "The review panel did not reach consensus after 10 rounds. Remaining concerns: [list]"
-2. Update `./ideation/state.md`: `Phase: generating-outputs` (NOT `Done` yet — same pattern as PASS)
-3. **Invoke the ideation skill** via the Skill tool with:
-   > "The review panel has exhausted 10 revision rounds without consensus. Read `./Proposal.md` and generate the four final output files: `./Proposal_cn.md`, `./Proposal.html`, `./Proposal_cn.html`, and `./reference.bib`. In Section 9, add a new subsection `### Review Panel Notes` immediately before the `### Decision Log` subsection, containing: 'NOTE: This proposal did not pass the review gate after 10 rounds. Remaining reviewer concerns: [list from metareview].' This subsection must be visually distinct from the auto-pilot decision log entries."
-4. **Validate outputs** (same check as PASS step 4). Retry up to 2 times if any file is missing.
-5. Update `./ideation/state.md`: `Phase: Done` — only after all output files are validated.
+2. Update `./ideation/state.md`: `Phase: generating-outputs`
+3. **Return** `GATE: FORCE-PROCEED | reason=10-round-exhaustion` to caller
+
+### User-Revision Force-Proceed (UserRevisionBudget exhausted)
+
+1. Add caveat to metareview in `./ideation/reviews/user-C-R/metareview.md`: "The user-initiated revision panel did not reach consensus after 3 rounds. Remaining concerns: [list]"
+2. Update `./ideation/state.md`: `Phase: generating-outputs`
+3. **Return** `GATE: FORCE-PROCEED | reason=user-budget-exhaustion` to caller
 
 ### Completion Criteria
 
 - [x] state.md updated with correct phase
 - [x] Aggregation report written
 - [x] Metareview written (FAIL/Force-Proceed only)
-- [x] Ideation skill invoked via Skill tool with correct instruction
-- [x] Output files validated (PASS/Force-Proceed only)
+- [x] Gate result returned to caller (NOT skill invocation)
 
 ---
 

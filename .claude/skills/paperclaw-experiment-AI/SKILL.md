@@ -6,7 +6,7 @@ description: >-
   or has a Proposal.md ready and needs to execute the full experiment pipeline.
   Runs an auto-pilot loop of server setup → experiment planning → baseline reproduction →
   our method implementation → report generation. All working state lives in ./experiment/.
-  Produces Report.md, Report.html, Report_cn.md, and Report_cn.html as final deliverables.
+  Produces Report.md, Report.html, Report_zh.md, and Report_zh.html as final deliverables.
 version: 2.0.0
 ---
 
@@ -127,7 +127,7 @@ When starting a new session, check if `./experiment/state.md` exists:
      2. **Local-only mode** — skip all remote operations; continue with local files (plan.md, results.md, report generation only)
      3. **Abort** — save state and exit cleanly
    - Record the decision in log.md and proceed accordingly.
-6. **Sync todos** — read status.json and call TodoWrite to rebuild the `paperclaw-*` todo set (current phase, doing jobs, next jobs, blocker if any)
+6. **Sync todos** — the main session skill reads status.json and calls TodoWrite to rebuild the `paperclaw-*` todo set (current phase, doing jobs, next jobs, blocker if any). The executor agent must NOT call TodoWrite directly — it only updates state.md and status.json, then returns to the main session which handles todo sync.
 7. **Check for stopped state** — if `Status: stopped` in state.md, output:
    > "上次会话已停止，位于 Phase \<N\> Step \<X.Y\>。回复 "resume" 继续，或 "abort" 放弃当前实验状态。"
    Then wait for the user's reply before proceeding. On `resume`: set `Status: running` in state.md and continue. On `abort`: delete state.md, status.json, and clear todos.
@@ -147,7 +147,7 @@ updated: <timestamp>
 
 - Current Phase: <0-4>
 - Current Step: <e.g., 2.3>
-- Status: running | blocked | waiting-for-user | complete
+- Status: running | blocked | waiting-for-user | stopped | complete
 - Blocker: <description or "none">
 - Last Action: <brief description>
 
@@ -245,9 +245,9 @@ updated: <timestamp>
 
 **Every time state.md is written, immediately:**
 1. Write `./experiment/status.json` with the same data in machine-readable form.
-2. Call **TodoWrite** to sync the Todo list (see Todo Sync below).
+2. Sync the Todo list (see Todo Sync below).
 
-Both actions are performed by the **skill in the main session** — never by the executor subagent.
+Both actions (status.json write + TodoWrite call) are performed by the **skill in the main session** — never by the executor subagent. The executor updates state.md only; the main session handles status.json and todos upon receiving the executor's return.
 
 ### status.json Format
 
@@ -511,10 +511,10 @@ Final outputs in project root (`./`):
 
 | File | Format | Language | Audience |
 |------|--------|----------|----------|
-| `Report.md` | Markdown | English | Detailed report for paper writing |
-| `Report_cn.md` | Markdown | Chinese | Chinese translation for paper writing |
-| `Report.html` | HTML | English | Polished report for user review |
-| `Report_cn.html` | HTML | Chinese | Polished report for user review |
+| `./Report.md` | Markdown | English | Detailed report for paper writing |
+| `./Report_zh.md` | Markdown | Chinese | Chinese translation for paper writing |
+| `./Report.html` | HTML | English | Polished report for user review |
+| `./Report_zh.html` | HTML | Chinese | Polished report for user review |
 
 ### Iteration Log Entry Template
 
@@ -795,10 +795,12 @@ git commit -m "chore: initialize experiment codebase scaffold"
 **c) Push to all connected servers** (see Appendix H push command) — run in parallel for all connected servers:
 ```bash
 rsync -az \
-  --exclude='/data/' --exclude='.venv/' --exclude='__pycache__/' \
-  --exclude='/checkpoints/' --exclude='/results/' --exclude='/figures/' --exclude='/wandb/' \
+  --exclude='data/' --exclude='checkpoints/' --exclude='results/' \
+  --exclude='figures/' --exclude='wandb/' --exclude='.env' \
+  --exclude='.venv/' --exclude='__pycache__/' --exclude='*.pyc' --exclude='.git/' \
+  -e "ssh -p <port>" \
   ./experiment/codebase/ \
-  -e "ssh -p <port>" <user>@<host>:<workdir>/
+  <user>@<host>:<workdir>/
 ```
 
 > **Push rule**: Push is always **local → remote**. The initial push at Step 1.6c is an intentional exception — all servers need the scaffold before any job can be assigned. For all subsequent pushes (Phases 2–3), push only to the server receiving the next job. Never mass-push to all servers when fixing a bug for one. Never edit code directly on the remote; all edits happen locally in `./experiment/codebase/` using Write/Edit tools.
@@ -1092,21 +1094,21 @@ Write a comprehensive English report to **`./Report.md`** (project root, NOT `./
 
 Every claim from the Proposal must appear in section 4 with a pass/fail verdict.
 
-#### Step 4.3: Generate Report.html
+#### Step 4.3: Generate `./Report.html`
 
-Convert Report.md to styled HTML using `references/report-html-template.html` as base. Requirements: academic serif typography, responsive layout, sortable tables, collapsible `<details>` sections, Mermaid rendering via CDN, print-friendly. `lang="en"`.
+Convert `./Report.md` to styled HTML at **`./Report.html`** (project root) using `references/report-html-template.html` as base. Requirements: academic serif typography, responsive layout, sortable tables, collapsible `<details>` sections, Mermaid rendering via CDN, print-friendly. `lang="en"`.
 
-#### Step 4.4: Generate Report_cn.md
+#### Step 4.4: Generate `./Report_zh.md`
 
-Chinese Markdown translation of Report.md. Rules:
+Write Chinese Markdown translation to **`./Report_zh.md`** (project root). Rules:
 - Keep numbers, method names, dataset names, math notation, citations in English
-- Table and section structure identical to Report.md
+- Table and section structure identical to `./Report.md`
 - Technical terms with English in parentheses: "消融实验 (Ablation Study)"
 - All file/code paths unchanged
 
-#### Step 4.5: Generate Report_cn.html
+#### Step 4.5: Generate `./Report_zh.html`
 
-Chinese HTML version using same template. Change `lang="zh-CN"`, use Chinese fonts (`PingFang SC`, `Microsoft YaHei`). Same translation rules as Report_cn.md.
+Write Chinese HTML version to **`./Report_zh.html`** (project root) using same template. Change `lang="zh-CN"`, use Chinese fonts (`PingFang SC`, `Microsoft YaHei`). Same translation rules as `./Report_zh.md`.
 
 #### Step 4.6: Final Git Commit
 
@@ -1115,7 +1117,7 @@ Update `./experiment/codebase/README.md` locally with final reproduction command
 ```bash
 git add experiment/codebase/ experiment/server.md experiment/plan.md experiment/results.md \
         experiment/comparison.md experiment/ours.md experiment/state.md experiment/log.md \
-        Report.md Report_cn.md Report.html Report_cn.html
+        Report.md Report_zh.md Report.html Report_zh.html
 git commit -m "feat(experiment): complete experiment pipeline — all phases done"
 ```
 
@@ -1123,7 +1125,7 @@ git commit -m "feat(experiment): complete experiment pipeline — all phases don
 
 - [x] Report.md covers all 7 sections per template
 - [x] Report.html renders correctly with Mermaid diagrams
-- [x] Report_cn.md and Report_cn.html are complete translations
+- [x] Report_zh.md and Report_zh.html are complete translations
 - [x] All 4 output files exist in project root
 - [x] Final git commit made
 
@@ -1301,8 +1303,12 @@ After each job's first checkpoint, query actual VRAM used and record in the Acti
 **Local server launch command template** (computed at launch time):
 ```bash
 ALLOWED_CORES=$(($(nproc) / 2 - 1))
-RESERVED_MB=$(python3 -c "import os; mem=$(free -m | awk '/Mem:/{print $2}'); print(max(4096, int(mem*0.20)))")
-ALLOWED_MB=$(($(free -m | awk '/Mem:/{print $4}') - RESERVED_MB))
+TOTAL_MB=$(free -m | awk '/Mem:/{print $2}')
+FREE_MB=$(free -m | awk '/Mem:/{print $4}')
+RESERVED_MB=$(( TOTAL_MB * 20 / 100 ))
+[ "$RESERVED_MB" -lt 4096 ] && RESERVED_MB=4096
+ALLOWED_MB=$(( FREE_MB - RESERVED_MB ))
+[ "$ALLOWED_MB" -lt 0 ] && ALLOWED_MB=0
 ssh -p <Port> <Host> "tmux new-session -d -s paperclaw-<id> \
   'cd <workdir> && <Activation> && \
    nice -n 19 taskset -c 0-${ALLOWED_CORES} \
@@ -1310,7 +1316,7 @@ ssh -p <Port> <Host> "tmux new-session -d -s paperclaw-<id> \
    tmux wait-for -S paperclaw-<id>-done'"
 ```
 
-**Scheduling capacity** stored per-server in server.md after Phase 0 probe:
+**Scheduling capacity** stored per-server in state.md (under each server's section) after Phase 0 probe:
 ```markdown
 ## Scheduling Capacity - Server <name>
 - GPUs: <N> × <name> (<M> MiB total each)
@@ -1421,7 +1427,7 @@ When a job finishes:
 | Phase 3 scaffold while Phase 2 baselines run | ✅ Yes | Strategist writes locally; no conflict |
 | Our method while baseline still running | ✅ Yes | Assign to idle server/GPU |
 
-#### F.7: Job Queue Management
+#### F.6: Job Queue Management
 
 The Job Queue in state.md is the master list of all pending and running experiments. It drives the saturation loop (F.3).
 
@@ -1441,10 +1447,10 @@ The Job Queue in state.md is the master list of all pending and running experime
 - Set up `.venv` on servers not yet initialized
 - Push codebase to servers scheduled for upcoming jobs
 
-#### F.6: Adaptive Capacity Adjustment
+#### F.7: Adaptive Capacity Adjustment
 
 If a job triggers an OOM kill or the machine becomes unresponsive (can happen more often on shared servers):
-1. After recovery, reduce the RAM threshold by 5% for that server in server.md (e.g., 80% → 75%) and log the incident.
+1. After recovery, reduce the RAM threshold by 5% for that server in the `## Servers` section of state.md (e.g., 80% → 75%) and log the incident.
 2. Log the incident in log.md with the resource state at the time (include `who` output to note if other users were active).
 3. For subsequent jobs on that server: reduce batch size or enable gradient checkpointing.
 4. If a single job OOMs even alone → handle per Appendix D.
@@ -1522,7 +1528,7 @@ All hardware, scheduling, and status data is stored exclusively in `state.md`.
 12. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
 13. **Local is source of truth** — All code lives in `./experiment/codebase/`; never edit code on remote; push before each job, pull after
 14. **Check RAM/CPU/disk before every launch** — For GPU co-location (placing a second job on an occupied GPU): do a soft pre-check (`memory.free > Est.VRAM × 1.1 AND utilization.gpu < 70%`); if it fails, skip that GPU and try another. For the first job on an idle GPU: no pre-check needed — launch and handle OOM reactively (Appendix D)
-15. **Saturate remote servers** — Fill all available server capacity via the job queue (Appendix F.7) and saturation loop (Appendix F.3)
+15. **Saturate remote servers** — Fill all available server capacity via the job queue (Appendix F.6) and saturation loop (Appendix F.3)
 16. **Protect the local machine** — Local server (`Local?: yes`) gets `nice -n 19`, `taskset`, `ulimit`, and conservative RAM/CPU thresholds; Claude Code must not be starved
 17. **Push is targeted** — Push codebase only to the server receiving the next job; never mass-push to all servers during a debug cycle
 18. **Pipeline prep eagerly** — While jobs run, set up venvs and download datasets on idle servers in parallel
@@ -1557,6 +1563,12 @@ experiment/figures/
 ```bash
 # Key-based auth:
 rsync -avz --delete \
+  --exclude='data/' \
+  --exclude='checkpoints/' \
+  --exclude='results/' \
+  --exclude='figures/' \
+  --exclude='wandb/' \
+  --exclude='.env' \
   --exclude='.venv/' \
   --exclude='__pycache__/' \
   --exclude='*.pyc' \
@@ -1567,6 +1579,12 @@ rsync -avz --delete \
 
 # With password:
 rsync -avz --delete \
+  --exclude='data/' \
+  --exclude='checkpoints/' \
+  --exclude='results/' \
+  --exclude='figures/' \
+  --exclude='wandb/' \
+  --exclude='.env' \
   --exclude='.venv/' \
   --exclude='__pycache__/' \
   --exclude='*.pyc' \
@@ -1626,4 +1644,4 @@ Load on demand:
 - `<ref-dir>/domain.md` — target venue standards, experiment expectations, and resource estimates
 - `<ref-dir>/reproduction-guide.md` — common reproduction pitfalls, tolerance table, and when-to-give-up criteria
 - `<ref-dir>/report-template.md` — Report.md section structure and writing guide (7 required sections)
-- `<ref-dir>/report-html-template.html` — HTML/CSS template for Report.html and Report_cn.html
+- `<ref-dir>/report-html-template.html` — HTML/CSS template for Report.html and Report_zh.html

@@ -8,7 +8,7 @@ description: >
   state/log/papers file management, HTML generation, Chinese translation, and
   reference.bib generation. This is the default workhorse agent — invoke for
   anything not requiring original research reasoning.
-tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent", "TodoWrite", "Skill"]
+tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent", "TodoWrite"]
 model: sonnet
 ---
 
@@ -76,12 +76,12 @@ You are the execution backbone of the PaperClaw ideation pipeline. You handle al
 - Track attempt count in `./ideation/state.md` as `Lean4Attempt: N`
 
 ### Final Output Generation (after review PASS)
-- Generate `./Proposal_cn.md` — Chinese translation of Proposal.md
+- Generate `./Proposal_zh.md` — Chinese translation of Proposal.md
   - Keep method names, dataset names, math notation, citations in English
   - Use parenthetical English for key technical terms on first use
 - Generate `./Proposal.html` — styled HTML with KaTeX, Mermaid, collapsible sections
   - Use template from `references/proposal-html-template.html`
-- Generate `./Proposal_cn.html` — Chinese HTML version
+- Generate `./Proposal_zh.html` — Chinese HTML version
 - Generate `./reference.bib` — search DBLP/Semantic Scholar for official BibTeX entries
 - Validate all 5 output files exist and are non-empty
 
@@ -115,8 +115,11 @@ Trigger points:
 - After Phase 1 landscape table ready → Task B1 (gap analysis + propose 2-3 directions)
 - After Phase 2.5 feasibility scouting complete → Task B2 (auto-select best direction using feasibility data)
 - After Phase 3 deep dive complete → Task C (RQ + theory + Lean 4 proofs + method + experiment)
-- After Phase 4 complete and Lean 4 passes → Task D (write Proposal.md)
-- When state.md shows revision-N → Task E (interpret metareview, revise Proposal)
+- After Phase 4 complete and Lean 4 passes → Task D (write Proposal.md); after Task D completes → set state to `review-pending` → **return** `NEXT_ACTION: review-pending` to caller (do NOT invoke reviewing skill yourself)
+- When state.md shows `revision-N` → Task E (interpret metareview, revise Proposal); after Task E completes → set state to `review-pending` → **return** `NEXT_ACTION: review-pending` to caller
+- When state.md shows `user-revision` → read `UserRevisionCycle` (C) and `UserRevisionRound` (R) from state.md; check `./ideation/reviews/user-C-R/` for `metareview.md` (review FAIL continuation) or `user_feedback.md` (fresh cycle entry); invoke Task E with whichever exists; after Task E completes → set state to `review-pending` → **return** `NEXT_ACTION: review-pending` to caller
+- When user provides revision feedback and state is `Done` or any completed phase → execute User-Initiated Revision Protocol (see SKILL.md): set C = old `UserRevisionCycle` + 1, R = 1, B = 3; save feedback to `./ideation/reviews/user-C-R/user_feedback.md`; update state.md with `UserRevisionCycle: C`, `UserRevisionRound: R`, `UserRevisionBudget: B`, `Phase: user-revision`; then trigger Task E; after Task E completes → **return** `NEXT_ACTION: review-pending` to caller
+- When caller instructs "generate final outputs" → generate Proposal_zh.md, Proposal.html, Proposal_zh.html, reference.bib → **return** `NEXT_ACTION: outputs-generated` to caller
 - On Lean 4 build Proof Error → Task C retry (send error to strategist for fix)
 
 ## Execution Standards
