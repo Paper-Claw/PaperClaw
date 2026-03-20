@@ -127,7 +127,8 @@ When starting a new session, check if `./experiment/state.md` exists:
      2. **Local-only mode** — skip all remote operations; continue with local files (plan.md, results.md, report generation only)
      3. **Abort** — save state and exit cleanly
    - Record the decision in log.md and proceed accordingly.
-6. **Resume** from the last incomplete step recorded in state.md
+6. **Sync todos** — read status.json and call TodoWrite to rebuild the `paperclaw-*` todo set (current phase, doing jobs, next jobs, blocker if any)
+7. **Resume** from the last incomplete step recorded in state.md
 7. **If Phase 2/3** → also read comparison.md / ours.md for iteration history
 
 If the user wants to restart a phase, they must explicitly say so.
@@ -239,7 +240,11 @@ updated: <timestamp>
 
 **Update state.md** at: phase start, step start/end, blockers, user input requests, job start/finish, concurrent job launch/completion.
 
-**Every time state.md is written, immediately write `./experiment/status.json`** with the same data in machine-readable form. This is the primary interface for external programs.
+**Every time state.md is written, immediately:**
+1. Write `./experiment/status.json` with the same data in machine-readable form.
+2. Call **TodoWrite** to sync the Todo list (see Todo Sync below).
+
+Both actions are performed by the **skill in the main session** — never by the executor subagent.
 
 ### status.json Format
 
@@ -306,6 +311,62 @@ updated: <timestamp>
   ]
 }
 ```
+
+### Todo Sync
+
+The **skill in the main session** calls TodoWrite every time state.md is updated. The executor never touches todos. Todos are rebuilt from scratch on each sync (read current list, replace all `paperclaw-*` entries with the new set).
+
+#### Todo Structure (max ~10 items)
+
+**1. Current Phase** (always 1 item, `in_progress`)
+
+```
+Phase <N>: <Phase Name> — <completed>/<total> experiments done, Step <X.Y>
+```
+
+Example: `Phase 2: Baseline Reproduction — 5/8 experiments done, Step 2.3`
+
+**2. Doing Jobs** — one item per active job (`in_progress`)
+
+```
+[running] <session_id> on <server>:GPU<N> (since <HH:MM>Z)
+```
+
+Example: `[running] paperclaw-baseline-bert on main:GPU0 (since 09:00Z)`
+
+**3. Next Jobs** — up to 3 queued items from job queue (`pending`)
+
+```
+[next] <experiment> (~<est_vram> MiB, ~<est_time>)
+```
+
+Example: `[next] Baseline-C / Dataset-X (~12000 MiB, ~2h)`
+
+**4. Blocker** — only when `Status: blocked` (`in_progress`)
+
+```
+BLOCKED: <description> — reply: <option A> / <option B> / <option C>
+```
+
+The reply options must be specific to the blocker type:
+
+| Blocker type | Reply options |
+|---|---|
+| Baseline cannot reproduce after 5 iters | `"skip"` / `"retry with hint: <your suggestion>"` / `"accept gap"` |
+| Our method cannot beat baseline after 10 iters | `"keep trying"` / `"diagnose: <your hypothesis>"` / `"accept result"` |
+| All servers unreachable | `"wait"` / `"local-only mode"` / `"abort"` |
+| Dataset requires login | `"credentials: <user> <pass>"` / `"skip dataset"` |
+| Non-empty working directory | `"proceed (keep files)"` / `"use different dir: <path>"` |
+| Sudo required | `"password: <sudo password>"` / `"skip command"` |
+
+Example blocker todo:
+```
+BLOCKED: Baseline BERT -3.2% after 5 iters — reply: "skip" / "retry with hint: <your suggestion>" / "accept gap"
+```
+
+#### When the session expired and you restart
+
+The skill reads `status.json` on startup and immediately syncs todos before doing anything else. If `Status: blocked`, it re-asks the question in chat **and** shows the blocker todo with reply options so you know exactly what to type.
 
 ### Progress Tracking & ETA
 
@@ -982,15 +1043,16 @@ git commit -m "feat(experiment): complete experiment pipeline — all phases don
 
 This skill operates autonomously by default. Decisions are logged to `./experiment/log.md`.
 
-**ALWAYS ask** (never auto-decide):
+**ALWAYS ask** (never auto-decide). For items 2–8, before calling `AskUserQuestion` also write a `BLOCKED` todo entry with the exact reply options so the user can respond without reading the full conversation:
+
 1. Server credentials and connection setup (Phase 0.1)
-2. SSH unreachable during resume (offer: wait / local-only / abort)
-3. Baseline reproduction fails after 5 iterations
-4. Our method cannot beat a baseline after 10 total iterations
-5. Non-empty working directory found on server
-6. Dataset requires registration/login to download
+2. SSH unreachable during resume → todo: `BLOCKED: All servers unreachable — reply: "wait" / "local-only mode" / "abort"`
+3. Baseline reproduction fails after 5 iterations → todo: `BLOCKED: <method> -X% after 5 iters — reply: "skip" / "retry with hint: <your suggestion>" / "accept gap"`
+4. Our method cannot beat a baseline after 10 total iterations → todo: `BLOCKED: Our method below <baseline> after 10 iters — reply: "keep trying" / "diagnose: <your hypothesis>" / "accept result"`
+5. Non-empty working directory found on server → todo: `BLOCKED: <server>:<workdir> not empty — reply: "proceed (keep files)" / "use different dir: <path>"`
+6. Dataset requires registration/login → todo: `BLOCKED: <dataset> requires login — reply: "credentials: <user> <pass>" / "skip dataset"`
 7. Plan.md ready for review before execution
-8. Sudo is required for a specific command (ask at that moment only; do NOT ask upfront)
+8. Sudo is required for a specific command → todo: `BLOCKED: sudo needed for <command> on <server> — reply: "password: <sudo password>" / "skip command"`
 
 **Auto-decide and log**:
 1. Hyperparameter adjustments during reproduction
