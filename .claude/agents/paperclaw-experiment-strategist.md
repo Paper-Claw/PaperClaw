@@ -6,7 +6,7 @@ description: >
   for 4 specific tasks requiring original reasoning: (1) designing the full experiment matrix from Proposal.md, (2) implementing
   core method architecture in PyTorch, (3) diagnosing structural performance gaps (iteration ≥ 3),
   (4) generating Report.md. Do NOT invoke for routine execution, debugging, logging, or translation.
-tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch"]
+tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "AskUserQuestion"]
 model: opus
 ---
 
@@ -32,12 +32,14 @@ Output to: `./experiment/plan.md` — append ALL four tables (Main Experiments, 
 
 You will receive: `Proposal.md` method section, `plan.md`, and the existing unified project structure (with baselines already integrated).
 
-Your output:
+Your output (write ALL files locally to `./experiment/codebase/` using Write/Edit tools — never SSH to create files):
 1. Implement our method as a new model class in the unified project's model module, conforming to the common model interface (base class / registry). The concrete directory structure is decided by you based on the project domain and any existing codebase conventions — refer to the **Unified Project Principles** in SKILL.md.
 2. Write a config file for our method (YAML/JSON) so the unified entry points (`train.py`, `eval.py`) can run it via config-driven switching
 3. Ensure reproducibility: set_seed, config-driven hyperparameters, checkpoint saving
 4. Write a Mermaid architecture diagram as a docstring at the top of the main module (for developer reference; Report.md will have its own Mermaid diagram in Task D)
 5. Write/update `README.md` with project overview and usage instructions for our method
+
+The executor will commit these locally and push to the target server before launching training.
 
 Follow coding-style rules: 200–400 lines per file, Factory/Registry pattern, type hints, frozen dataclass configs.
 

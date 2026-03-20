@@ -7,7 +7,7 @@ description: >-
   Runs an auto-pilot loop of server setup → experiment planning → baseline reproduction →
   our method implementation → report generation. All working state lives in ./experiment/.
   Produces Report.md, Report.html, Report_cn.md, and Report_cn.html as final deliverables.
-version: 1.3.0
+version: 2.0.0
 ---
 
 # PaperClaw Experiment AI — Full Experiment Execution Pipeline
@@ -111,22 +111,23 @@ When starting a new session, check if `./experiment/state.md` exists:
 
 1. **If exists** → Read state.md to determine current phase/step
 2. **Read log.md** for recent events and context
-3. **Detect server.md changes** — Re-read `./experiment/server.md` and compare to the Servers table in state.md:
-   - Any server whose `Status:` is `untested` or whose name is absent from the Servers table is **new**. Run Phase 0 Steps 0.2–0.5 for those servers only (skip Step 0.1 — the block already exists).
-   - Servers already in the Servers table (connected or disconnected) are handled by Step 4 below.
+3. **Check codebase exists** — If state.md shows phase ≥ 1, verify `./experiment/codebase/` exists. If missing, ask the user before proceeding (something went wrong in a previous session).
+4. **Detect server.md changes** — Re-read `./experiment/server.md` and compare to the Servers table in state.md:
+   - Any server whose `Status:` is `untested` or whose name is absent from the Servers table is **new**. Run Phase 0 Steps 0.2–0.5 for those servers only (skip Step 0.1). Then, if phase ≥ 1: **push the current codebase** to the new server (Appendix H push command) and create its `.venv` — so it is ready to receive jobs from the saturation loop.
+   - Servers already in the Servers table are handled by Step 5 below.
    - This step also fires when the user explicitly says "I've updated server.md", "I added a server", etc.
-4. **Check all known servers** (Status was `connected` or `disconnected`) via SSH:
+5. **Check all known servers** (Status was `connected` or `disconnected`) via SSH:
    - Reachable? Check for active tmux sessions (`tmux list-sessions 2>/dev/null | grep '^paperclaw-'`). If a training job is still running in a `paperclaw-*` session, resume monitoring it instead of restarting. Check latest checkpoint.
    - Update `Status:` in the Connection block and in the Servers table in state.md.
    - If SSH **unreachable**: do NOT escalate immediately. Retry once after 30 seconds.
    - If still unreachable: mark `disconnected` and continue with remaining connected servers.
-   - If **no** servers are reachable (including any newly probed from Step 3): ask user via `AskUserQuestion` with three options:
+   - If **no** servers are reachable (including any newly probed from Step 4): ask user via `AskUserQuestion` with three options:
      1. **Wait** — user will restore server access; resume after confirmation
      2. **Local-only mode** — skip all remote operations; continue with local files (plan.md, results.md, report generation only)
      3. **Abort** — save state and exit cleanly
    - Record the decision in log.md and proceed accordingly.
-5. **Resume** from the last incomplete step recorded in state.md
-6. **If Phase 2/3** → also read comparison.md / ours.md for iteration history
+6. **Resume** from the last incomplete step recorded in state.md
+7. **If Phase 2/3** → also read comparison.md / ours.md for iteration history
 
 If the user wants to restart a phase, they must explicitly say so.
 
@@ -147,10 +148,18 @@ updated: <timestamp>
 
 ## Servers
 
-| Name | Host | Status | GPUs | Free GPU Mem (at last check) | Free RAM (at last check) | Last Checked |
-|------|------|--------|------|------------------------------|--------------------------|--------------|
-| main | gpu1.example.com | connected | 4× A100 80G | 240G / 320G | 120G / 512G | <timestamp> |
-| gpu2 | gpu2.example.com | disconnected | — | — | — | <timestamp> |
+| Name | Host | Status | GPUs | Free RAM (at last check) | Last Checked | Local? | Last Pull |
+|------|------|--------|------|--------------------------|--------------|--------|-----------|
+| main | gpu1.example.com | connected | 4× A100 80G | 120G / 512G | <timestamp> | no | <timestamp> |
+| gpu2 | gpu2.example.com | disconnected | — | — | <timestamp> | no | never |
+| local | localhost | connected | 1× RTX 3090 | 18G / 32G | <timestamp> | **yes** | <timestamp> |
+
+## Job Queue
+
+| Priority | Experiment | Est. Time | Assigned Server | Status |
+|----------|-----------|-----------|-----------------|--------|
+| 1 | Baseline-A / Dataset-X | 2h | — | queued |
+| 2 | Baseline-B / Dataset-X | 1.5h | main | running |
 
 ## Progress Tracking
 
@@ -202,16 +211,19 @@ Avg time/job: ~<M>min  |  Est. remaining: ~<H>h <M>m
 
 All internal files live under `./experiment/`:
 
-| File | Type | Purpose |
-|------|------|---------|
+| File/Dir | Type | Purpose |
+|----------|------|---------|
+| `codebase/` | **Git-tracked directory** | All experiment code and configs — the local source of truth. Edits always happen here; code is pushed to remote before each job. |
 | `server.md` | Partial-overwrite | Multi-server config: user-editable Connection blocks + skill-written Hardware/Scheduling sections |
 | `plan.md` | Overwrite | Experiment plan (datasets, baselines, metrics, schedule) |
 | `comparison.md` | Append-only | Baseline reproduction log (iterations, errors, fixes) |
 | `ours.md` | Append-only | Our method implementation log (iterations, errors, fixes) |
-| `state.md` | Overwrite | Current phase, step, blockers, progress tracking |
+| `state.md` | Overwrite | Current phase, step, blockers, progress tracking, job queue |
 | `log.md` | Append-only | Timestamped event log across all phases |
-| `results.md` | Overwrite | Running experiment result tables |
-| `figures/` | Directory | Visualization outputs downloaded from server (PNG, 300dpi) |
+| `results.md` | Overwrite | Running experiment result tables (human-readable summary) |
+| `checkpoints/` | **Gitignored directory** | Model checkpoints pulled from remote after training (`checkpoints/<server-name>/`) |
+| `results/` | **Gitignored directory** | Raw outputs pulled from remote after eval (`results/<server-name>/`) |
+| `figures/` | **Gitignored directory** | Figures pulled from remote after analysis jobs |
 
 Final outputs in project root (`./`):
 
@@ -285,9 +297,14 @@ Establish reliable connections to all configured experiment servers, probe their
 
 > **Adding servers later**: The user can add new `## Connection - Server <name>` blocks to `server.md` at any time and say "I've updated server.md" or "server info is updated." The skill will re-run Steps 0.2–0.5 for any server whose `status:` is `untested` or missing.
 
-#### Step 0.2: Test SSH Connections (All Servers)
+#### Step 0.2: Test SSH Connections & Detect Local Servers (All Servers)
 
 For each server parsed in Step 0.1:
+
+**Local server detection**: Before SSH-testing, check if the server is the local machine. A server is local if its `Host` is `localhost`, `127.0.0.1`, or matches the output of `hostname -f` / `hostname`. If local:
+- Resolve `Working Directory` to an absolute path: `realpath <workdir>`. If the user provided a relative path, resolve it and update the Connection block's `SSH shorthand` accordingly.
+- Mark `Local?: yes` in state.md Servers table.
+- SSH test still runs normally (`ssh localhost` works and is used for all commands for consistency).
 
 ```bash
 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new <user>@<host> -p <port> "echo 'Connection OK'"
@@ -339,9 +356,26 @@ Per-server scheduling capacity (see Appendix F and G):
 - Available disk space
 - Logged-in user count at probe time (for shared-server awareness)
 
-#### Step 0.6: Probe Local Hardware
+#### Step 0.6: Probe Local Hardware & Initialize Local Directories
 
-Detect local machine specs (`system_profiler` on macOS, `/proc/cpuinfo` on Linux) and write/overwrite a `## Local Machine` section in `server.md`.
+**a) Detect local specs** (`system_profiler` on macOS, `/proc/cpuinfo` on Linux) and write/overwrite a `## Local Machine` section in `server.md`.
+
+**b) Create local artifact directories** (gitignored; used as pull targets after remote jobs):
+```bash
+mkdir -p ./experiment/checkpoints
+mkdir -p ./experiment/results
+mkdir -p ./experiment/figures
+```
+
+**c) Ensure the PaperClaw `.gitignore`** contains entries for large gitignored artifacts. Append if missing:
+```
+experiment/codebase/data/
+experiment/codebase/.venv/
+experiment/codebase/__pycache__/
+experiment/checkpoints/
+experiment/results/
+experiment/figures/
+```
 
 ### Completion Criteria
 
@@ -441,23 +475,48 @@ The executor supplements the strategist's experiment matrix (already in plan.md 
 - Execution order and dependencies
 - Risk assessment and fallback plans
 
-#### Step 1.6: Initialize Unified Project & Git Repository
+#### Step 1.6: Initialize Experiment Codebase Locally
 
-**Primary server**: Initialize the unified project on the first connected server listed in server.md (the "primary server"). All servers share the same codebase — use `rsync` to sync code to secondary servers before running jobs on them (see sync rule below).
+`./experiment/codebase/` is the single source of truth for all experiment code. It is tracked by the PaperClaw git repo. **Remote servers have no git** — they are stateless compute mirrors.
 
-On the primary server:
-1. Create the unified Python project scaffold following the **Unified Project Principles** above: `pyproject.toml` (or `setup.py`), a model registry/factory, shared data loading, shared training loop, shared evaluation, and unified entry points (`train.py`, `eval.py`). The concrete directory layout is decided by the strategist based on the project domain and any existing codebase conventions.
-2. Write an initial `README.md` documenting the project structure, installation, and basic usage.
-3. `git init`, create `.gitignore` (exclude `__pycache__/`, `.venv/`, `data/`, `*.pt`, `*.pth`, `wandb/`, `.env`, credentials, etc.), initial commit.
+**a) Scaffold locally (minimal stub)** — The executor creates a minimal stub project in `./experiment/codebase/` using Write/Edit tools (not SSH):
+- `pyproject.toml` (or `setup.py`) with common dependencies (torch, numpy, scipy, scikit-learn, pandas, matplotlib, tqdm)
+- `train.py` and `eval.py` as stubs that print `"Not implemented — layout decided at Step 3.1"` and exit
+- `README.md` placeholder noting structure will be finalized at Step 3.1
 
-**Multi-server code sync rule**: Before launching any job on a secondary server, sync the project code from the primary server:
-```bash
-rsync -az --exclude='.venv' --exclude='data' --exclude='*.pt' --exclude='*.pth' --exclude='wandb' \
-  -e "ssh -p <primary-port>" \
-  <primary-user>@<primary-host>:<primary-workdir>/ \
-  -e "ssh -p <secondary-port>" <secondary-user>@<secondary-host>:<secondary-workdir>/
+> **Do NOT scaffold the model registry, shared training loop, or concrete directory structure here.** The full unified project layout (module names, base classes, entry point logic) is decided by the strategist at Step 3.1 based on the project domain and any existing codebase conventions. The strategist will replace these stubs with the real structure.
+
+Also create `./experiment/codebase/.gitignore`:
 ```
-Each secondary server has its own `.venv` (created in Phase 2 Step 2.0) and `data/` directory (downloaded independently). Only code and configs are synced. Sync before each new job launch on a secondary server; no need to sync mid-run.
+data/
+.venv/
+__pycache__/
+*.pyc
+checkpoints/
+results/
+figures/
+wandb/
+.env
+```
+
+Write an initial `README.md` documenting the project structure, installation, and basic usage.
+
+**b) Local git commit** (PaperClaw repo, not a new git init):
+```bash
+git add experiment/codebase/
+git commit -m "chore: initialize experiment codebase scaffold"
+```
+
+**c) Push to all connected servers** (see Appendix H push command) — run in parallel for all connected servers:
+```bash
+rsync -az \
+  --exclude='data/' --exclude='.venv/' --exclude='__pycache__/' \
+  --exclude='checkpoints/' --exclude='results/' --exclude='figures/' --exclude='wandb/' \
+  ./experiment/codebase/ \
+  -e "ssh -p <port>" <user>@<host>:<workdir>/
+```
+
+> **Push rule**: Push is always **local → remote**. The initial push at Step 1.6c is an intentional exception — all servers need the scaffold before any job can be assigned. For all subsequent pushes (Phases 2–3), push only to the server receiving the next job. Never mass-push to all servers when fixing a bug for one. Never edit code directly on the remote; all edits happen locally in `./experiment/codebase/` using Write/Edit tools.
 
 #### Step 1.7: Create results.md
 
@@ -469,7 +528,7 @@ Git commit locally: `docs(experiment): generate experiment plan`
 
 - [x] plan.md contains baselines, datasets, experiment matrix, claim-proof table
 - [x] results.md initialized with all table headers
-- [x] Git repo initialized on server
+- [x] Codebase pushed to all connected servers
 - [x] All [Added] methods/datasets flagged for user review
 
 ---
@@ -507,17 +566,23 @@ For each baseline:
 
 Git commit after each baseline code setup.
 
-#### Step 2.3: Run Baselines (Resource-Aware Parallel)
+#### Step 2.3: Run Baselines (Saturation Parallel)
 
 Use the project's unified training and evaluation entry points with each baseline's config file.
 
-**Parallel scheduling** (see Appendix F for full rules):
-1. Before launching a new job, run the **resource check** commands (Appendix F.2) to get current CPU%, RAM%, and per-GPU memory usage.
-2. Consult the scheduling capacity in server.md to determine how many concurrent jobs are allowed.
-3. If resources permit, launch **independent baselines in parallel** — e.g., different baselines on different GPUs, or CPU-light evaluation alongside GPU training. Each gets its own tmux session (`paperclaw-train-baseline-<method>`).
-4. If launching would exceed any threshold (RAM > 85%, GPU memory > 90%, CPU > 90%), **wait** for a running job to finish before launching the next one.
-5. Monitor all active sessions; when one finishes, check resources again and launch the next queued experiment.
-6. Update the **Active Jobs** table in state.md whenever a job starts or finishes.
+**Before launching each job**:
+1. Push current codebase to the target server (Appendix H push command).
+2. Run live resource check on ALL connected servers (Appendix F.2 — RAM, CPU, disk only).
+3. Assign job to best available server per saturation loop (Appendix F.3).
+4. For local servers: apply conservative thresholds (Appendix F.1) and wrap command with `nice -n 19 taskset -c 0-<N>` and `ulimit`.
+5. Launch via tmux: `paperclaw-train-baseline-<method>`.
+6. Update Job Queue table in state.md; update **TodoWrite** (see Appendix I).
+
+**After each job completes**:
+1. Pull artifacts from that server (Appendix H pull commands).
+2. Update `Last Pull` in state.md Servers table.
+3. Immediately run the saturation loop (Appendix F.3) to fill any freed slot.
+4. Update **TodoWrite** to mark job completed with result metric.
 
 > **Important**: Jobs that share the same GPU or write to the same files are NOT independent — run them sequentially. Only parallelize truly independent experiments (different methods, different datasets, different GPUs).
 
@@ -550,10 +615,15 @@ Git commit locally after each baseline reproduced: `docs(results): reproduce <me
 
 #### Step 2.7: Git Commit Milestones
 
-Commit on remote server after each major milestone (see Git Strategy for message format):
-- Each baseline successfully reproduced
+All commits are **local** (PaperClaw repo). Remote servers have no git. After each milestone, edit/fix code in `./experiment/codebase/` locally then commit:
+```bash
+git add experiment/codebase/
+git commit -m "<message>"   # see Appendix C for message formats
+```
+Key milestones:
 - Dataset preparation complete
-- Unified evaluation pipeline ready
+- Each baseline code integrated
+- Each baseline successfully reproduced
 
 ### Completion Criteria
 
@@ -574,20 +644,29 @@ Implement the proposed method, achieve SOTA results on all datasets, conduct abl
 
 #### Step 3.1: Implement Core Method *(strategist)*
 
-Based on Proposal.md method design:
-1. Implement our method as a new model class in the unified project's model module, conforming to the common model interface
-2. Implement model architecture (PyTorch, type hints, docstrings, ≤400 lines/file)
-3. Write a config file for our method (config-driven hyperparameters, checkpoint saving, seed setting)
-4. Ensure the unified entry points (`train.py`, `eval.py`) work with our method's config
-5. Update `README.md` with our method's usage instructions
+Based on Proposal.md method design, the **strategist writes all files locally** into `./experiment/codebase/` using Write/Edit tools:
+1. **Design and create the full unified project layout** — decide the concrete directory structure based on the project domain and any existing codebase conventions. Replace the stub scaffold from Step 1.6 with the real structure: model registry/factory, shared data loading, shared training loop, shared evaluation, and working unified entry points (`train.py`, `eval.py`).
+2. Implement our method as a new model class in the unified project's model module, conforming to the common model interface
+3. Implement model architecture (PyTorch, type hints, docstrings, ≤400 lines/file)
+4. Write a config file for our method (config-driven hyperparameters, checkpoint saving, seed setting)
+5. Ensure the unified entry points (`train.py`, `eval.py`) work with our method's config
+6. Update `./experiment/codebase/README.md` with our method's usage instructions
 
-Git commit on remote: `feat(method): implement core method architecture`
+After strategist returns, executor makes a local git commit:
+```bash
+git add experiment/codebase/
+git commit -m "feat(method): implement core method architecture"
+```
 
 #### Step 3.2: Initial Training & Debugging
 
-Run on each dataset. Debug common issues: shape mismatches, NaN/Inf loss, OOM, non-convergence.
+Push current codebase to target server(s), then run on each dataset. Debug common issues: shape mismatches, NaN/Inf loss, OOM, non-convergence. All fixes are made locally in `./experiment/codebase/` using Write/Edit tools, then pushed to the target server before re-running.
 
-Git commit after training runs successfully: `feat(method): initial training working on <dataset>`
+After training runs successfully: local git commit + pull artifacts:
+```bash
+git add experiment/codebase/ && git commit -m "feat(method): initial training working on <dataset>"
+```
+Pull checkpoints and results from server (Appendix H pull commands). Update **TodoWrite**.
 
 #### Step 3.3: Iterative Performance Improvement
 
@@ -652,7 +731,7 @@ Git commit per claim: `feat(claim-proof): verify claim "<claim_summary>"`
 
 #### Step 3.8: Analysis Experiments
 
-Conduct analysis from plan.md: efficiency, visualization (t-SNE, attention maps), case studies, scalability. Download figures via scp to `./experiment/figures/`.
+Conduct analysis from plan.md: efficiency, visualization (t-SNE, attention maps), case studies, scalability. After each analysis job completes, pull figures using the Appendix H pull command (figures land in `./experiment/figures/`).
 
 Git commit: `feat(analysis): complete <analysis_type> experiments`
 
@@ -660,7 +739,7 @@ Git commit: `feat(analysis): complete <analysis_type> experiments`
 
 Fill in all remaining rows: ours main results, ablation tables, analysis tables, figure references.
 
-Update the project's `README.md` on the remote server with final reproduction commands for all methods.
+Update `./experiment/codebase/README.md` locally with final reproduction commands for all methods.
 
 Git commit locally: `docs(results): update results for all experiments`
 
@@ -684,9 +763,11 @@ Verify all experiments are complete, then generate four report files.
 
 ### Steps
 
-#### Step 4.1: Completeness Check
+#### Step 4.1: Final Pull & Completeness Check
 
-Verify plan.md against results.md:
+**Final pull from all connected servers** (Appendix H pull commands) before checking completeness. This ensures all checkpoints, results, and figures are local. Log total sizes pulled in log.md and update `Last Pull` in state.md.
+
+Then verify plan.md against results.md:
 - All main comparison results present
 - All baseline reproductions within tolerance
 - Our method beats all baselines (flag exceptions)
@@ -699,7 +780,10 @@ If incomplete → go back to the relevant phase.
 **Claim Contradiction Check**: Read the "Contradictions" section of results.md (populated in Step 3.7).
 - If one or more claims are contradicted → surface all contradictions to the user via `AskUserQuestion` **before** generating the report:
   > "The following claims from Proposal.md were contradicted by experiments: [list]. How would you like to proceed? (a) Revise the Proposal claims and continue to report generation; (b) Re-run specific experiments; (c) Proceed to report generation as-is (contradictions will be documented)."
-- Record the user's decision in log.md, then proceed accordingly.
+- Record the user's decision in log.md, then proceed accordingly:
+  - **(a)**: Update the affected claim text in Proposal.md, clear the "Contradictions" section in results.md, proceed to Step 4.2.
+  - **(b)**: Add the specific re-run experiments back to the Job Queue in state.md, set `Current Phase: 3` / `Current Step: 3.7`, resume from Step 3.7 for those experiments only. After they complete, return to Step 4.1.
+  - **(c)**: Proceed to Step 4.2 as-is; the report's Claim Verification section will document each contradiction with a `⚠️ CONTRADICTED` verdict.
 
 #### Step 4.2: Generate Report.md *(strategist)*
 
@@ -733,10 +817,12 @@ Chinese HTML version using same template. Change `lang="zh-CN"`, use Chinese fon
 
 #### Step 4.6: Final Git Commit
 
-Update `README.md` on the remote server with final reproduction commands for all experiments.
+Update `./experiment/codebase/README.md` locally with final reproduction commands for all methods. Then commit everything to the PaperClaw repo:
 
 ```bash
-git add experiment/ Report.md Report_cn.md Report.html Report_cn.html
+git add experiment/codebase/ experiment/server.md experiment/plan.md experiment/results.md \
+        experiment/comparison.md experiment/ours.md experiment/state.md experiment/log.md \
+        Report.md Report_cn.md Report.html Report_cn.html
 git commit -m "feat(experiment): complete experiment pipeline — all phases done"
 ```
 
@@ -783,42 +869,36 @@ Decision log format:
 **Decision**: <chosen>  |  **Rationale**: <why>
 ```
 
-### B. SSH Command Patterns
+### B. SSH & Rsync Command Patterns
 
-All remote commands use the `Host`, `Port`, `User`, `Working Directory`, and `Activation` fields from the server's Connection block in server.md. Construct SSH commands as:
+All remote commands use the `Host`, `Port`, `User`, `Working Directory`, and `Activation` fields from the server's Connection block in server.md.
 
 ```bash
-# Simple command  (use SSH shorthand from server.md for brevity)
+# Simple command
 ssh -o ConnectTimeout=30 -p <Port> <User>@<Host> "cd '<Working Directory>' && <command>"
 
 # With venv  (use the Activation field, not a hardcoded path)
 ssh -o ConnectTimeout=30 -p <Port> <User>@<Host> "cd '<Working Directory>' && <Activation> && <command>"
 
 # Long-running training (use tmux, NOT nohup)
-# Session naming: paperclaw-<experiment_id> (e.g., paperclaw-train-baseline-pomo, paperclaw-ablation-01)
-# The command auto-closes the tmux session when the program finishes.
+# For LOCAL servers: prefix with nice/taskset/ulimit (see Appendix F.1)
 ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<experiment_id> 'cd <workdir> && <Activation> && python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<experiment_id>-done'"
 
-# Check training status (attach or read log)
+# Check training status
 ssh <server> "tmux capture-pane -t paperclaw-<experiment_id> -p | tail -50"
-# Or read the log file directly:
 ssh <server> "cd <workdir> && tail -50 train.log"
 
-# Check if a tmux session is still running
+# Check if a tmux session is running
 ssh <server> "tmux has-session -t paperclaw-<experiment_id> 2>/dev/null && echo 'RUNNING' || echo 'FINISHED'"
 
-# Wait for a tmux session to finish (blocking)
-ssh <server> "tmux wait-for paperclaw-<experiment_id>-done"
-
-# Kill a stuck session (only when explicitly needed)
+# Kill a stuck session
 ssh <server> "tmux kill-session -t paperclaw-<experiment_id>"
 
 # List all paperclaw sessions
 ssh <server> "tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'No active sessions'"
-
-# File transfer
-scp -P <port> <user>@<host>:<workdir>/results/* ./experiment/figures/
 ```
+
+See **Appendix H** for the canonical PUSH and PULL rsync commands used before/after every job.
 
 **Tmux session lifecycle:**
 1. Start: `tmux new-session -d -s paperclaw-<id> '<command>; tmux wait-for -S paperclaw-<id>-done'`
@@ -826,41 +906,38 @@ scp -P <port> <user>@<host>:<workdir>/results/* ./experiment/figures/
 3. Auto-cleanup: When the command finishes, the session closes automatically (since the shell command was the only process). The `tmux wait-for -S` signal lets the local side know it's done.
 4. **Never leave orphaned sessions.** If a session is no longer needed (e.g., after error recovery), kill it explicitly with `tmux kill-session`.
 
+**Polling interval:** Check job status every **5 minutes** for jobs expected to finish within 1 hour; every **15 minutes** for longer jobs. After each check, run the saturation loop (Appendix F.3) to fill any freed slots. If a session disappears unexpectedly (not due to normal completion), immediately check `tail -100 train.log` for the cause. If `train.log` shows no new output for **30+ minutes** during an active training run, treat the job as stuck: capture the last output, kill the session, and apply the relevant fix from Appendix D before restarting.
+
 Timeout handling: use `tmux` for all long-running jobs (training, evaluation, dataset download), `ConnectTimeout=30` for short commands, retry 3× on SSH drop.
 
 ### C. Git Strategy
 
-#### Remote Server Git (experiment code)
+All commits happen **locally** in the PaperClaw repo. Remote servers have no git — they are stateless compute mirrors. The local git log is the complete history of the experiment.
+
+```bash
+# Template for all experiment commits
+git add experiment/codebase/ [other changed files]
+git commit -m "<message>"
+```
 
 | Milestone | Commit Message |
 |-----------|---------------|
-| Init | `chore: initialize unified experiment project` |
-| Dataset ready | `feat(data): download and verify <dataset>` |
-| Baseline code setup | `feat(baseline): integrate <method> into unified project` |
+| Codebase scaffold | `chore: initialize experiment codebase scaffold` |
+| Baseline integrated | `feat(baseline): integrate <method> into unified project` |
 | Baseline reproduced | `feat(baseline): reproduce <method> (metric=XX.X)` |
-| Our method initial | `feat(method): implement core method architecture` |
+| Our method implemented | `feat(method): implement core method architecture` |
 | Training working | `feat(method): initial training working on <dataset>` |
 | Each improvement | `feat(method): improve <component> (+X.X on <dataset>)` |
 | Ablation done | `feat(ablation): complete component ablation study` |
 | Multi-seed done | `feat(method): complete multi-seed runs (mean±std)` |
 | Claim-proof done | `feat(claim-proof): verify claim "<summary>"` |
 | Analysis done | `feat(analysis): complete <type> experiments` |
-| All done | `feat: complete all experiments` |
-
-#### Local Git (working files)
-
-| Milestone | Commit Message |
-|-----------|---------------|
 | Plan ready | `docs(experiment): generate experiment plan` |
-| Baseline reproduced | `docs(results): reproduce <method> on <dataset>` |
-| Ours beats baseline | `docs(results): ours beats <method> on <dataset> (+X.X)` |
-| Ablation done | `docs(results): complete ablation study` |
-| Claim proof done | `docs(results): verify claim "<short>"` |
-| Analysis done | `docs(results): complete <type> analysis` |
 | Results updated | `docs(results): update results for <method/dataset>` |
 | Report generated | `docs(report): generate experiment reports (EN + CN)` |
+| All done | `feat(experiment): complete experiment pipeline` |
 
-**Rule**: Never squash or amend local experiment commits. The git log is the full history of the experiment, useful for tracing decisions and writing the paper.
+**Rule**: Never squash or amend experiment commits. The local git log is the full, traceable history of every code change and result.
 
 ### D. Error Recovery
 
@@ -890,64 +967,81 @@ Experiment servers often have finite resources and may be **shared with other us
 
 > **Shared-server rule**: Never assume the server is idle. Always measure free resources immediately before launching a job. Other users' processes may appear or disappear at any time.
 
-#### F.1: Scheduling Capacity (determined in Phase 0, stored in server.md)
+#### F.1: Scheduling Thresholds
 
-After hardware probing, compute and record per-server in server.md:
+**GPU memory is not pre-checked.** Jobs are launched regardless of current GPU memory state. OOM errors are handled reactively (see Appendix D). This allows maximum GPU utilization.
 
+Only **RAM, CPU, and disk** are checked before each launch. Thresholds differ between remote and local servers:
+
+| Resource | Remote server | Local server (`Local?: yes`) |
+|---|---|---|
+| GPU memory | ✅ Just launch — no pre-check | ✅ Just launch — no pre-check |
+| RAM | Usage < 80% of total | Free RAM > `max(4 GiB, 20% of total)` ← reserved for Claude Code + OS |
+| CPU | 1-min load avg < 85% | 1-min load avg < 50% |
+| Disk | Usage < 90% | Usage < 90% |
+| Process priority | normal | `nice -n 19` + `taskset -c 0-<floor(nproc/2)-1>` + `ulimit -v <allowed_kb>` |
+
+**Local server launch command template** (computed at launch time):
+```bash
+ALLOWED_CORES=$(($(nproc) / 2 - 1))
+RESERVED_MB=$(python3 -c "import os; mem=$(free -m | awk '/Mem:/{print $2}'); print(max(4096, int(mem*0.20)))")
+ALLOWED_MB=$(($(free -m | awk '/Mem:/{print $4}') - RESERVED_MB))
+ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<id> \
+  'cd <workdir> && <Activation> && \
+   nice -n 19 taskset -c 0-${ALLOWED_CORES} \
+   bash -c \"ulimit -v $((ALLOWED_MB * 1024)); python train.py --config <cfg> 2>&1 | tee train.log\"; \
+   tmux wait-for -S paperclaw-<id>-done'"
+```
+
+**Scheduling capacity** stored per-server in server.md after Phase 0 probe:
 ```markdown
 ## Scheduling Capacity - Server <name>
+- GPUs: <N> × <name> (<M> MiB total each)
+- RAM Headroom: reserve 20% of total RAM for OS + SSH + other users
 
-- **GPUs**: <N> × <name> (<M> MiB total each)
-- **Max Concurrent CPU-Only Jobs**: <floor(total_threads / 4)> (cap at 4)
-- **RAM Headroom**: reserve 20% of total RAM for OS + SSH + monitoring + other users
-
-### Thresholds (do NOT launch new jobs if exceeded — check LIVE before each launch)
-- RAM usage > 80% of total  *(tighter than single-user: other users may allocate RAM at any time)*
-- GPU: live free memory on target GPU < estimated peak memory of the new job
+### Thresholds (checked LIVE before each launch — no GPU memory check)
+- RAM usage > 80% of total
 - CPU usage > 85% sustained (1-min avg)
 - Disk usage > 90%
 ```
 
-**Capacity rules:**
-- **Same GPU, multiple jobs**: Allowed only when live `memory.free` (from `nvidia-smi`) ≥ the new job's estimated peak. Do NOT rely on `memory.total - memory.used` from the probe done at session start — re-check live.
-- **Multi-GPU**: Prefer spreading jobs across GPUs first. Only stack on the same GPU when all GPUs are partially occupied and live free memory permits.
-- **CPU-only jobs**: Can run alongside GPU jobs as long as live RAM and CPU thresholds are respected.
-- **Multi-server**: When multiple servers are connected, treat each server's resources independently. Assign jobs to the server with the most available resources for the job type (GPU jobs → server with most free GPU memory; CPU jobs → server with lowest CPU load).
-- **Estimating GPU memory**: Run the job once solo and record peak usage via `nvidia-smi`. Use that measurement for subsequent scheduling. Before the first measurement, assume **70% of one GPU's total memory** as a conservative estimate (lower than single-user to account for other users' processes).
-
 #### F.2: Live Resource Check Commands
 
-Run these **immediately before launching any new job** (not at session start — live state matters):
+Run these **immediately before launching any new job**:
 
 ```bash
-# Per-server live snapshot (single SSH call per server)
-ssh <server> "echo '=== GPU ==='; nvidia-smi --query-gpu=index,memory.used,memory.free,memory.total,utilization.gpu --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
-  echo '=== RAM ==='; free -m | grep Mem; \
+# Per-server live snapshot (RAM, CPU, disk — no GPU memory check needed)
+ssh <server> "echo '=== RAM ==='; free -m | grep Mem; \
   echo '=== CPU ==='; top -bn1 | grep 'Cpu(s)' | awk '{print \"CPU used: \" 100-\$8 \"%\"}'; \
   echo '=== DISK ==='; df -h <workdir> | tail -1; \
   echo '=== OTHER USERS ==='; who | wc -l; \
   echo '=== OUR JOBS ==='; tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'None'"
 ```
 
-Parse `memory.free` (NOT `memory.total - memory.used`) for GPU scheduling — `memory.free` is the live available memory accounting for all processes, including other users. If **any** threshold is exceeded on all servers, **do not launch** — wait for a running job to finish, then re-check (poll every 60 seconds).
+If **any** RAM/CPU/disk threshold is exceeded on all servers, do not launch — wait for a running job to finish, then re-check (poll every 60 seconds).
 
-#### F.3: Multi-Server Launch Protocol
+#### F.3: Saturation Loop
 
-Before starting a new experiment:
+**Trigger**: run at session start and after every job completes. Goal: fill ALL available server capacity before stopping.
 
-1. **Check active jobs** across all connected servers: `tmux list-sessions | grep '^paperclaw-'` on each.
-2. **Run live resource check** (F.2) on ALL connected servers in one round.
-3. **Select best server** for the job:
-   - **GPU job**: Scan all servers. For each server, find the GPU with the highest `memory.free`. Pick the server+GPU combination with the most free memory that still meets the job's estimated peak. If multiple options are equivalent, prefer the server with fewer active paperclaw jobs.
-   - **CPU job**: Pick the server with lowest CPU% and most free RAM.
-   - If a server's TIP (from server.md Connection block) mentions constraints (e.g., "slow network — avoid large downloads"), honor that hint when selecting.
-4. **Evaluate thresholds on chosen server**: free GPU memory ≥ job estimate AND RAM < 80% AND CPU < 85%. If not → try next best server. If none qualify → wait and re-poll.
-5. **Pin GPU**: For GPU jobs, always set `CUDA_VISIBLE_DEVICES=<gpu_index>`. Use the `Activation` field from the chosen server's Connection block (not a hardcoded path):
-   ```bash
-   ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<id> 'cd <Working Directory> && <Activation> && CUDA_VISIBLE_DEVICES=<gpu_index> python train.py --config <config> 2>&1 | tee <logfile>; tmux wait-for -S paperclaw-<id>-done'"
-   ```
-6. **Update state.md**: Add the new job to the Active Jobs table with server name.
-7. **Log**: Record launch in log.md with server name and live resource snapshot at launch time.
+```
+LOOP:
+  1. Check active jobs on ALL servers (tmux list-sessions | grep paperclaw-)
+  2. Run live resource check (F.2) on ALL connected servers simultaneously
+  3. For each server that passes thresholds (F.1):
+       For each queued job (by priority order from Job Queue in state.md):
+         - Push codebase to that server (Appendix H push)
+         - Launch job via tmux (local: add nice/taskset/ulimit — F.1)
+         - Update Job Queue: mark running + assigned server
+         - Update TodoWrite (Appendix I)
+         - Log launch in log.md with resource snapshot
+  4. Continue step 3 until queue is empty OR all servers are at capacity
+  5. If all servers at capacity: monitor; re-run loop when any job finishes
+```
+
+**Key rule**: never stop after filling one slot. Fill ALL available capacity in one pass.
+
+**Server selection per job**: prefer the server with the lowest current load (CPU + RAM). Honor TIP hints (e.g., "slow SSD — avoid large downloads") when choosing between equivalent options. For local servers: verify conservative thresholds (F.1) before assigning any job.
 
 #### F.4: Monitoring Active Jobs (Multi-Server)
 
@@ -974,16 +1068,37 @@ When a job finishes:
 
 | Scenario | Parallel? | Notes |
 |----------|-----------|-------|
-| Different baselines on different servers | Yes | Check live resources on each server before launch |
-| Different baselines on different GPUs (same server) | Yes | Pin each to its own GPU; check live free memory |
-| Different baselines on same GPU | Yes, if live `memory.free` fits | Check live free memory ≥ sum of peaks |
-| Different seeds on different servers | Yes | Best use of multi-server setup |
-| Different seeds on different GPUs (same server) | Yes | Pin each; check live free memory |
-| Ablation variants across servers or GPUs | Yes | Spread across servers first, then GPUs |
-| CPU evaluation while GPU is training | Yes | Check live RAM on the same server |
-| Dataset download while GPU is training | Yes | I/O-bound; check disk and bandwidth |
-| Two training jobs on a single-GPU server | Yes, if live `memory.free` fits | Re-check immediately before second launch |
-| Our method while baseline still running | Yes, if resources fit | Prefer different server or GPU; always check live |
+| Different baselines on different servers | ✅ Yes | Fill all servers simultaneously |
+| Different baselines on different GPUs (same server) | ✅ Yes | Each job just launches; no memory pre-check |
+| Different seeds on different servers or GPUs | ✅ Yes | Best use of multi-server setup |
+| Ablation variants across servers or GPUs | ✅ Yes | Fill all available capacity |
+| CPU evaluation while GPU trains (same server) | ✅ Yes | Check live RAM only |
+| Dataset download while training (same server) | ✅ Yes | I/O-bound; check disk space |
+| venv setup on Server B while jobs run on Server A | ✅ Yes | CPU-light pipeline prep |
+| Code push to Server B while Server A trains | ✅ Yes | Network-bound, doesn't affect training |
+| Strategist running while baselines train remotely | ✅ Yes | Strategist uses local CPU/RAM only |
+| Phase 3 scaffold while Phase 2 baselines run | ✅ Yes | Strategist writes locally; no conflict |
+| Our method while baseline still running | ✅ Yes | Assign to idle server/GPU |
+
+#### F.7: Job Queue Management
+
+The Job Queue in state.md is the master list of all pending and running experiments. It drives the saturation loop (F.3).
+
+**Priority ordering** (higher priority = assigned first):
+1. Baselines (Phase 2) — required before our method can be evaluated
+2. Our method initial training (Phase 3.2)
+3. Our method iterations (Phase 3.3)
+4. Ablation studies (Phase 3.5)
+5. Multi-seed runs (Phase 3.6)
+6. Claim-proof experiments (Phase 3.7)
+7. Analysis experiments (Phase 3.8)
+
+**Queue initialization**: at the start of each phase, add all jobs for that phase to the queue with status `queued`. As jobs launch, update to `running`. On completion, update to `done` and remove from queue.
+
+**Pipeline prep jobs** (not in the queue, but run opportunistically alongside queued jobs):
+- Download datasets on idle servers while other jobs run
+- Set up `.venv` on servers not yet initialized
+- Push codebase to servers scheduled for upcoming jobs
 
 #### F.6: Adaptive Capacity Adjustment
 
@@ -1063,19 +1178,12 @@ Each `## Connection - Server <name>` block contains these fields:
 ## Scheduling Capacity - Server main
 <!-- Written by the skill — do not edit -->
 - GPUs: 8 × A100 80G (81920 MiB each)
-- Max Concurrent CPU-Only Jobs: 4
 - RAM Headroom: reserve 20% (≈102 GiB) for OS + other users
 
 ### Thresholds (live — re-checked before every job launch)
 - RAM usage > 80% of total
-- GPU: live `memory.free` < estimated peak of new job
 - CPU usage > 85% (1-min avg)
 - Disk usage > 90%
-
-### Measured Job Memory Footprints
-| Method | Dataset | GPU Peak (MiB) | RAM Peak (GiB) |
-|--------|---------|----------------|----------------|
-| Baseline-A | DatasetX | 18400 | 12 |
 
 ---
 
@@ -1093,6 +1201,43 @@ Each `## Connection - Server <name>` block contains these fields:
 
 ## Hardware - Server gpu2
 <!-- not yet probed — will be filled after connection test -->
+
+---
+
+## Connection - Server local
+- Host: localhost
+- Port: 22
+- User: alice
+- Working Directory: /home/alice/PaperClaw/experiment/codebase
+- Activation: source /home/alice/PaperClaw/experiment/codebase/.venv/bin/activate
+- SSH shorthand: ssh -p 22 alice@localhost
+- Note: Local machine — Claude Code runs here; conserve resources
+- Status: connected
+- Local?: yes
+
+> TIP: This is the local machine where Claude Code runs. Apply nice/taskset/ulimit on all jobs. Reserve max(4 GiB, 20% RAM) and max(2 cores, nproc/4) for Claude Code.
+
+## Hardware - Server local
+<!-- Written by the skill — do not edit -->
+- CPU: 12 cores / 12 threads (Apple M2 Pro)
+- Total RAM: 32 GiB  |  In use at probe: 8 GiB
+- Disk (<workdir>): 1 TiB total, 600 GiB free
+
+## Software Environment - Server local
+<!-- Written by the skill — do not edit -->
+- OS: macOS 14.3
+- Python: 3.11.6
+- CUDA: N/A
+
+## Scheduling Capacity - Server local
+<!-- Written by the skill — do not edit -->
+- GPUs: none
+- RAM Headroom: reserve max(4 GiB, 20% total) for Claude Code + OS
+
+### Thresholds (live — re-checked before every job launch)
+- RAM usage > 50% of total (conservative — local)
+- CPU usage > 50% (1-min avg, conservative — local)
+- Disk usage > 90%
 
 ---
 
@@ -1123,20 +1268,126 @@ Each `## Connection - Server <name>` block contains these fields:
 
 1. **Reproduce before innovate** — Never skip baseline reproduction
 2. **Log everything** — Every iteration, every failure, every fix
-3. **Git frequently** — Commit at every milestone; never squash local experiment commits
+3. **Git frequently** — Commit at every milestone; all commits are local (PaperClaw repo); never squash experiment commits
 4. **Venv always** — Never install packages globally on the server
 5. **Numbers must match** — Reproduced baselines within tolerance before proceeding
 6. **Beat all baselines** — Our method must win on all datasets before reporting
 7. **Prove every claim** — Every non-trivial claim must have a dedicated claim-proof experiment
 8. **Expand comparison coverage** — Mine baselines' comparison tables to add SOTA methods and datasets
-9. **Track progress** — Update state.md at every job boundary; report ETA when asked
+9. **Track progress** — Update state.md at every job boundary; update TodoWrite at every job start/finish
 10. **Reports serve two audiences** — HTML for quick review, MD (EN + CN) for paper writing
 11. **Never store secrets** — Sudo password in session memory only
 12. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
-13. **Download results locally** — Keep `experiment/figures/` synced for reports
-14. **Respect machine limits** — Always check **live** resources before launching jobs; never saturate the server (see Appendix F)
-15. **Treat servers as shared** — Other users may consume resources at any time; always re-check free memory/CPU/RAM immediately before each job launch, not just at session start
-16. **Spread across servers** — When multiple servers are connected, distribute jobs across them; consult each server's TIP for scheduling hints
+13. **Local is source of truth** — All code lives in `./experiment/codebase/`; never edit code on remote; push before each job, pull after
+14. **Check RAM/CPU/disk before launch; never pre-check GPU memory** — Just launch GPU jobs; handle OOM reactively (Appendix D)
+15. **Saturate remote servers** — Fill all available server capacity via the job queue (Appendix F.7) and saturation loop (Appendix F.3)
+16. **Protect the local machine** — Local server (`Local?: yes`) gets `nice -n 19`, `taskset`, `ulimit`, and conservative RAM/CPU thresholds; Claude Code must not be starved
+17. **Push is targeted** — Push codebase only to the server receiving the next job; never mass-push to all servers during a debug cycle
+18. **Pipeline prep eagerly** — While jobs run, set up venvs and download datasets on idle servers in parallel
+
+---
+
+### H. File Classification & Rsync Commands
+
+#### File Classification
+
+| Category | Where it lives | Tracked by git? | Sync strategy |
+|----------|---------------|-----------------|---------------|
+| **Code** (`codebase/`) | Local `./experiment/codebase/` | Yes (PaperClaw repo) | **Push** before each job; never edit on remote |
+| **Datasets** | Remote `<workdir>/data/` | No | Re-download per server; too large to sync |
+| **Checkpoints** (`checkpoints/`) | Local `./experiment/checkpoints/` | No (`.gitignore`) | **Pull** after each job; never pushed |
+| **Results** (`results/`) | Local `./experiment/results/` | No (`.gitignore`) | **Pull** after each job |
+| **Figures** (`figures/`) | Local `./experiment/figures/` | No (`.gitignore`) | **Pull** after each job |
+| **Runtime** (`.venv/`, `__pycache__/`) | Remote `<workdir>/` | No | Ephemeral; never synced |
+
+`.gitignore` entries (added by Step 0.6):
+```
+experiment/checkpoints/
+experiment/results/
+experiment/figures/
+```
+
+#### Canonical PUSH Command (local codebase → remote, before each job)
+
+```bash
+rsync -avz --delete \
+  --exclude='.venv/' \
+  --exclude='__pycache__/' \
+  --exclude='*.pyc' \
+  --exclude='.git/' \
+  -e "ssh -p <Port>" \
+  ./experiment/codebase/ \
+  <User>@<Host>:<Working Directory>/
+```
+
+- Run this immediately before launching any training/evaluation job on `<server>`.
+- `--delete` ensures stale files from old runs are removed on the remote.
+- **Targeted**: push only to the server receiving the next job (not all servers).
+- **Local server exception**: If `Local?: yes` and `Working Directory` resolves to `./experiment/codebase/` (same path), skip the push — the directory IS the source.
+
+#### Canonical PULL Commands (remote artifacts → local, after each job)
+
+```bash
+# Pull checkpoints
+rsync -avz \
+  -e "ssh -p <Port>" \
+  <User>@<Host>:<Working Directory>/checkpoints/ \
+  ./experiment/checkpoints/<server-name>/
+
+# Pull results / logs
+rsync -avz \
+  -e "ssh -p <Port>" \
+  <User>@<Host>:<Working Directory>/results/ \
+  ./experiment/results/<server-name>/
+
+# Pull figures
+rsync -avz \
+  -e "ssh -p <Port>" \
+  <User>@<Host>:<Working Directory>/figures/ \
+  ./experiment/figures/<server-name>/
+```
+
+- Run after every job completes (training, evaluation, ablation, claim-proof, analysis).
+- Sub-directory per server (`<server-name>/`) prevents filename collisions across servers.
+- Update `Last Pull` timestamp in state.md after each pull.
+- **Local server exception**: If `Local?: yes` and the working directory is `./experiment/codebase/`, skip the pull — artifacts are already local. Figures may be in `./experiment/codebase/figures/`; move them to `./experiment/figures/` if needed.
+
+---
+
+### I. TodoWrite Format
+
+Use `TodoWrite` to replace the entire task list at every job boundary. The list must be **flat** (no indentation), with naming conventions in the content field to convey structure.
+
+#### Naming Convention
+
+```
+[Phase/Step] <server>: <description> — <STATUS>
+```
+
+- **Phase/Step**: `P0`, `P1`, `P2`, `P3`, `P4` or `P2.3`, `P3.2`, etc.
+- **server**: server name (e.g., `main`, `gpu2`, `local`) or `local` for local-only tasks
+- **STATUS**: `pending` / `in_progress` / `completed` / `blocked`
+
+#### Example List at a Job Boundary
+
+```
+P2.3 main: Baseline-A training (ResNet-50, CIFAR-10) — in_progress
+P2.3 gpu2: Baseline-B training (ViT-B/16, CIFAR-10) — in_progress
+P2.3 local: Baseline-C CPU training (logistic regression) — in_progress
+P2.3 local: Pull artifacts from main after job — pending
+P2.3 local: Pull artifacts from gpu2 after job — pending
+P3 local: Push codebase + launch our method on main — pending
+P3 local: Saturation loop after P2 completes — pending
+P4 local: Completeness check & report — pending
+```
+
+#### When to Replace the List
+
+Replace the full list (not append) at these moments:
+1. **Phase start**: Set all tasks for the phase to `pending`
+2. **Job launch**: Mark launched job as `in_progress`; add pull task as `pending`
+3. **Job finish**: Mark job `completed`; mark pull task `in_progress`; run saturation loop; add new jobs launched as `in_progress`
+4. **Blocker**: Add a `blocked` entry with the blocking reason; remove when resolved
 
 ---
 
