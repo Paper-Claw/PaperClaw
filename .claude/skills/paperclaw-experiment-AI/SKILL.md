@@ -141,11 +141,11 @@ updated: <timestamp>
 
 # Experiment State
 
-- **Current Phase**: <0-4>
-- **Current Step**: <e.g., 2.3>
-- **Status**: [running / blocked / waiting-for-user / complete]
-- **Blocker**: <description or "none">
-- **Last Action**: <brief description>
+- Current Phase: <0-4>
+- Current Step: <e.g., 2.3>
+- Status: running | blocked | waiting-for-user | complete
+- Blocker: <description or "none">
+- Last Action: <brief description>
 
 ## Servers
 
@@ -172,11 +172,11 @@ updated: <timestamp>
 
 ## Progress Tracking
 
-- **Total Experiments**: <N> (baselines: <N>, ablations: <N>, claim-proofs: <N>, analysis: <N>)
-- **Completed**: <N>
-- **Remaining**: <N>
-- **Estimated Time Per Job**: <minutes>
-- **Estimated Remaining Time**: <H hours M minutes>
+- Total Experiments: <N> (baselines: <N>, ablations: <N>, claim-proofs: <N>, analysis: <N>)
+- Completed: <N>
+- Remaining: <N>
+- Estimated Time Per Job: <minutes>
+- Estimated Remaining Time: <H hours M minutes>
 
 ## Active Jobs
 
@@ -239,6 +239,74 @@ updated: <timestamp>
 
 **Update state.md** at: phase start, step start/end, blockers, user input requests, job start/finish, concurrent job launch/completion.
 
+**Every time state.md is written, immediately write `./experiment/status.json`** with the same data in machine-readable form. This is the primary interface for external programs.
+
+### status.json Format
+
+```json
+{
+  "schema_version": "1.0",
+  "updated": "<ISO-timestamp>",
+  "phase": 2,
+  "step": "2.3",
+  "status": "running",
+  "blocker": null,
+  "last_action": "Launched Baseline BERT on main:GPU0",
+
+  "servers": [
+    {
+      "name": "main",
+      "host": "alice@gpu1.example.com",
+      "port": 22,
+      "status": "connected",
+      "local": false,
+      "gpus": "4× A100 80G",
+      "free_ram": "120G / 512G",
+      "last_checked": "<ISO-timestamp>",
+      "last_pull": "<ISO-timestamp>"
+    }
+  ],
+
+  "gpu_slots": [
+    {
+      "server": "main", "gpu": 0, "model": "A100",
+      "vram_total_mib": 81920, "vram_free_mib": 70000,
+      "util_pct": 12, "jobs": ["paperclaw-bert"],
+      "last_checked": "<ISO-timestamp>"
+    }
+  ],
+
+  "job_queue": [
+    {
+      "priority": 1, "experiment": "Baseline-A / Dataset-X",
+      "est_vram_mib": 12000, "est_time": "2h",
+      "server": null, "gpu": null, "status": "queued"
+    }
+  ],
+
+  "progress": {
+    "total": 20, "completed": 5, "remaining": 15,
+    "baselines": {"total": 8, "done": 3},
+    "ablations": {"total": 6, "done": 1},
+    "claim_proofs": {"total": 4, "done": 1},
+    "analysis": {"total": 2, "done": 0},
+    "avg_time_min": 45,
+    "eta_min": 675
+  },
+
+  "active_jobs": [
+    {
+      "session_id": "paperclaw-baseline-bert",
+      "server": "main", "gpu": 0,
+      "experiment": "Baseline BERT on Dataset A",
+      "est_vram_mib": 12000, "actual_vram_mib": 11200,
+      "started": "<ISO-timestamp>",
+      "status": "running"
+    }
+  ]
+}
+```
+
 ### Progress Tracking & ETA
 
 When a job finishes, update `Estimated Time Per Job` with a running average:
@@ -275,6 +343,7 @@ All internal files live under `./experiment/`:
 |----------|------|---------|
 | `codebase/` | **Git-tracked directory** | All experiment code and configs — the local source of truth. Edits always happen here; code is pushed to remote before each job. |
 | `server.md` | User-editable | Multi-server config: only user-written Connection blocks (Host, Port, Working Directory, Activation, Password, Note) |
+| `status.json` | Overwrite | Machine-readable mirror of state.md core data; updated atomically every time state.md is written |
 | `plan.md` | Overwrite | Experiment plan (datasets, baselines, metrics, schedule) |
 | `comparison.md` | Append-only | Baseline reproduction log (iterations, errors, fixes) |
 | `ours.md` | Append-only | Our method implementation log (iterations, errors, fixes) |
@@ -296,12 +365,14 @@ Final outputs in project root (`./`):
 
 ### Iteration Log Entry Template
 
-Used in both `comparison.md` and `ours.md`:
+Used in both `comparison.md` and `ours.md`.
+
+Title format: `## <ISO-timestamp> | iter=<N> | status=<status> | <Title>`
+
+Valid `status` values: `success` `partial` `failed` `improved` `regressed`
 
 ```markdown
-## <Title> — Iteration <N>
-
-**Date**: <timestamp>  |  **Status**: [Success / Partial / Failed / Improved / Regressed]
+## 2026-03-20T09:00:00Z | iter=1 | status=failed | Baseline BERT
 
 ### Configuration
 - Command: `<full command>`
@@ -312,8 +383,8 @@ Used in both `comparison.md` and `ours.md`:
 |---------|--------|-----------------|--------|---|
 
 ### Issues & Fix
-- **Issue**: <description>
-- **Fix**: <what was changed and why>
+- Issue: <description>
+- Fix: <what was changed and why>
 
 ### Git Commit
 - `<hash>`: `<message>`
@@ -321,11 +392,14 @@ Used in both `comparison.md` and `ours.md`:
 
 ### log.md Event Format
 
-```markdown
-### [<timestamp>] <Event Title>
+Title format: `### <ISO-timestamp> | phase=<N> | type=<type> | <Event Title>`
 
-**Phase**: <N>  |  **Type**: [milestone / decision / error / user-input / resume]
-**Details**: <what happened>
+Valid `type` values: `milestone` `decision` `error` `user-input` `resume`
+
+```markdown
+### 2026-03-20T09:00:00Z | phase=2 | type=milestone | Baseline BERT Reproduced
+
+Details: <what happened>
 ```
 
 Log events for: phase start/end, reproduction complete, iteration start/end, errors, user decisions, session resume, git commits.
@@ -579,6 +653,14 @@ rsync -az \
 #### Step 1.7: Create results.md
 
 Initialize `./experiment/results.md` with empty experiment tables (headers + reported baseline values, reproduced and ours rows set to `-`).
+
+Each table must be preceded by an HTML comment anchor in the form `<!-- table: <id> -->` so external programs can locate specific tables by ID. Use stable, descriptive IDs (e.g., `main_results`, `ablation_component`, `claim_efficiency`). Example:
+
+```markdown
+<!-- table: main_results -->
+| Method | Dataset-A F1 | Dataset-B Acc | Reported | Reproduced | Ours |
+|--------|-------------|---------------|----------|------------|------|
+```
 
 Git commit locally: `docs(experiment): generate experiment plan`
 
@@ -917,14 +999,15 @@ This skill operates autonomously by default. Decisions are logged to `./experime
 4. Optimization strategy choices
 5. Git commit timing and messages
 
-Decision log format:
+Decision log format (same `### title` pattern as log.md, `type=decision`):
 
 ```markdown
-### [<timestamp>] <Decision Title>
+### 2026-03-20T09:00:00Z | phase=2 | type=decision | Reduce Batch Size for BERT
 
-**Phase**: <N>  |  **Context**: <what led to this>
-**Options**: 1. <A>  2. <B>
-**Decision**: <chosen>  |  **Rationale**: <why>
+- Context: <what led to this>
+- Options: 1. <A>  2. <B>
+- Decision: <chosen>
+- Rationale: <why>
 ```
 
 ### B. SSH & Rsync Command Patterns
