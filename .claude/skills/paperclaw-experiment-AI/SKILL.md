@@ -114,8 +114,9 @@ When starting a new session, check if `./experiment/state.md` exists:
 3. **Check codebase exists** — If state.md shows phase ≥ 1, verify `./experiment/codebase/` exists. If missing, ask the user before proceeding (something went wrong in a previous session).
 4. **Detect server.md changes** — Re-read `./experiment/server.md` and compare to the Servers table in state.md:
    - Any server whose `Status:` is `untested` or whose name is absent from the Servers table is **new**. Run Phase 0 Steps 0.2–0.5 for those servers only (skip Step 0.1). Then, if phase ≥ 1: **push the current codebase** to the new server (Appendix H push command) and create its `.venv` — so it is ready to receive jobs from the saturation loop.
-   - Servers already in the Servers table are handled by Step 5 below.
-   - This step also fires when the user explicitly says "I've updated server.md", "I added a server", etc.
+   - Any server that was in the Servers table but whose `## Connection - Server <name>` block is now **absent from server.md** has been removed by the user. Remove it from the Servers table and GPU Slots in state.md; cancel any queued jobs assigned to it; log the removal.
+   - Servers still present are handled by Step 5 below.
+   - This step also fires when the user explicitly says "I've updated server.md", "I removed a server", "I added a server", etc.
 5. **Check all known servers** (Status was `connected` or `disconnected`) via SSH:
    - Reachable? Check for active tmux sessions (`tmux list-sessions 2>/dev/null | grep '^paperclaw-'`). If a training job is still running in a `paperclaw-*` session, resume monitoring it instead of restarting. Check latest checkpoint.
    - Update `Status:` in the Connection block and in the Servers table in state.md.
@@ -154,12 +155,20 @@ updated: <timestamp>
 | gpu2 | gpu2.example.com | disconnected | — | — | <timestamp> | no | never |
 | local | localhost | connected | 1× RTX 3090 | 18G / 32G | <timestamp> | **yes** | <timestamp> |
 
+## GPU Slots
+
+| Server | GPU | Model | VRAM Total | VRAM Free | Util% | Jobs | Last Checked |
+|--------|-----|-------|------------|-----------|-------|------|--------------|
+| main   | 0   | A100  | 81920 MiB  | 70000 MiB | 12%   | paperclaw-bert | <timestamp> |
+| main   | 1   | A100  | 81920 MiB  | 81920 MiB | 0%    | —    | <timestamp> |
+| local  | 0   | RTX3090 | 24576 MiB | 8000 MiB | 78%  | paperclaw-gpt2, paperclaw-roberta | <timestamp> |
+
 ## Job Queue
 
-| Priority | Experiment | Est. Time | Assigned Server | Status |
-|----------|-----------|-----------|-----------------|--------|
-| 1 | Baseline-A / Dataset-X | 2h | — | queued |
-| 2 | Baseline-B / Dataset-X | 1.5h | main | running |
+| Priority | Experiment | Est. VRAM | Est. Time | Server | GPU | Status |
+|----------|-----------|-----------|-----------|--------|-----|--------|
+| 1 | Baseline-A / Dataset-X | 12000 MiB | 2h | — | — | queued |
+| 2 | Baseline-B / Dataset-X | 8000 MiB | 1.5h | main | 1 | running |
 
 ## Progress Tracking
 
@@ -171,10 +180,10 @@ updated: <timestamp>
 
 ## Active Jobs
 
-| Session ID | Server | Experiment | GPU(s) | Est. RAM | Started | Status |
-|------------|--------|-----------|--------|----------|---------|--------|
-| paperclaw-train-baseline-X | main | Baseline X on Dataset A | 0 | 12G | <timestamp> | running |
-| paperclaw-train-baseline-Y | gpu2 | Baseline Y on Dataset B | 1 | 8G | <timestamp> | running |
+| Session ID | Server | GPU | Experiment | Est. VRAM | Actual VRAM | Started | Status |
+|------------|--------|-----|-----------|-----------|-------------|---------|--------|
+| paperclaw-baseline-bert | main | 0 | Baseline BERT on Dataset A | 12000 MiB | 11200 MiB | <timestamp> | running |
+| paperclaw-baseline-gpt2 | local | 0 | Baseline GPT-2 on Dataset B | 8000 MiB | — | <timestamp> | running |
 ```
 
 **Update state.md** at: phase start, step start/end, blockers, user input requests, job start/finish, concurrent job launch/completion.
@@ -891,7 +900,11 @@ ssh -o ConnectTimeout=30 -p <Port> <User>@<Host> "cd '<Working Directory>' && <A
 # Long-running training (use tmux, NOT nohup)
 # For LOCAL servers: prefix with nice/taskset/ulimit (see Appendix F.1)
 # ALWAYS use sanitized safe_id, never raw method/dataset names
-ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<safe_id> 'cd <workdir> && <Activation> && python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<safe_id>-done'"
+# Set gpu_index from the GPU Slots assignment (F.3); use "" for CPU-only jobs
+ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<safe_id> 'cd <workdir> && <Activation> && CUDA_VISIBLE_DEVICES=<gpu_index> python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<safe_id>-done'"
+
+# CPU-only job (evaluation, analysis, data download) — no GPU slot consumed
+ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<safe_id> 'cd <workdir> && <Activation> && CUDA_VISIBLE_DEVICES="" python eval.py --config <config> 2>&1 | tee eval.log; tmux wait-for -S paperclaw-<safe_id>-done'"
 
 # Check training status
 ssh <server> "tmux capture-pane -t paperclaw-<safe_id> -p | tail -50"
@@ -956,6 +969,7 @@ git commit -m "<message>"
 | Training crash | Check `tail -100 train.log`. Common fixes: reduce batch size, check data path, verify GPU. Resume from latest checkpoint. |
 | Out of disk | `df -h && du -sh <workdir>/*`. Clean old checkpoints, cached data. Ask user if still insufficient. |
 | Out of GPU memory | Reduce batch size → gradient accumulation → mixed precision (fp16/bf16) → gradient checkpointing. |
+| OOM on a co-located GPU (second job on same GPU) | This job was placed alongside another job. Check if the co-located job finished or grew in VRAM. If both jobs are still running: reduce batch size of the new job first. If still OOM: move the new job to a different GPU or server. Update `Est. VRAM` in the Job Queue upward (use `Actual VRAM × 1.2`) so future co-location checks are more conservative. |
 | Machine unresponsive (OOM kill / CPU saturated) | SSH will likely timeout. Wait 2 min, retry. If reachable: check `dmesg | tail -30` for OOM kills, `tmux list-sessions` for surviving jobs. Reduce max concurrent jobs in server.md by 1. Restart killed jobs from checkpoint. If unreachable after 3 retries: ask user to hard-reboot, then resume per Resume Protocol. |
 
 ### E. Tool Reference
@@ -978,17 +992,23 @@ Experiment servers often have finite resources and may be **shared with other us
 
 #### F.1: Scheduling Thresholds
 
-**GPU memory is not pre-checked.** Jobs are launched regardless of current GPU memory state. OOM errors are handled reactively (see Appendix D). This allows maximum GPU utilization.
+**GPU pre-check is soft and conditional.** For the first job on an idle GPU, launch immediately with no memory check. For co-locating a second or subsequent job on an already-occupied GPU, check memory and utilization first.
 
-Only **RAM, CPU, and disk** are checked before each launch. Thresholds differ between remote and local servers:
+| Resource | First job on idle GPU | Co-locating on occupied GPU | Local server (`Local?: yes`) |
+|---|---|---|---|
+| GPU memory | ✅ No pre-check — launch immediately | `memory.free > Est. VRAM × 1.1` | Same rules apply |
+| GPU utilization | ✅ No pre-check | `utilization.gpu < 70%` | Same rules apply |
+| RAM | Usage < 80% of total | Usage < 80% of total | Free RAM > `max(4 GiB, 20% of total)` |
+| CPU | 1-min load avg < 85% | 1-min load avg < 85% | 1-min load avg < 50% |
+| Disk | Usage < 90% | Usage < 90% | Usage < 90% |
+| Process priority | normal | normal | `nice -n 19` + `taskset -c 0-<floor(nproc/2)-1>` + `ulimit -v <allowed_kb>` |
 
-| Resource | Remote server | Local server (`Local?: yes`) |
-|---|---|---|
-| GPU memory | ✅ Just launch — no pre-check | ✅ Just launch — no pre-check |
-| RAM | Usage < 80% of total | Free RAM > `max(4 GiB, 20% of total)` ← reserved for Claude Code + OS |
-| CPU | 1-min load avg < 85% | 1-min load avg < 50% |
-| Disk | Usage < 90% | Usage < 90% |
-| Process priority | normal | `nice -n 19` + `taskset -c 0-<floor(nproc/2)-1>` + `ulimit -v <allowed_kb>` |
+**VRAM estimation rules** (used for `Est. VRAM` when a job is first queued):
+1. **Known job** — same method + dataset ran before: use `Actual VRAM` from last run × 1.2
+2. **Unknown job, first run**: conservative default = `min(40% of GPU total VRAM, 20480 MiB)`
+3. **CPU-only job** (evaluation, data download, analysis scripts): `Est. VRAM = 0`; assign `CUDA_VISIBLE_DEVICES=""`; does not occupy a GPU slot
+
+After each job's first checkpoint, query actual VRAM used and record in the Active Jobs `Actual VRAM` column. This feeds future estimates for the same job type.
 
 **Local server launch command template** (computed at launch time):
 ```bash
@@ -1016,40 +1036,65 @@ ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<id> \
 
 #### F.2: Live Resource Check Commands
 
-Run these **immediately before launching any new job**:
+Run these **immediately before each saturation loop pass**:
 
 ```bash
-# Per-server live snapshot (RAM, CPU, disk — no GPU memory check needed)
+# Full live snapshot — RAM, CPU, disk, and per-GPU stats
 ssh <server> "echo '=== RAM ==='; free -m | grep Mem; \
   echo '=== CPU ==='; top -bn1 | grep 'Cpu(s)' | awk '{print \"CPU used: \" 100-\$8 \"%\"}'; \
   echo '=== DISK ==='; df -h <workdir> | tail -1; \
+  echo '=== GPU ==='; nvidia-smi --query-gpu=index,memory.free,memory.total,utilization.gpu \
+    --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
   echo '=== OTHER USERS ==='; who | wc -l; \
   echo '=== OUR JOBS ==='; tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'None'"
 ```
+
+Parse the `=== GPU ===` lines and update the **GPU Slots** table in state.md (`VRAM Free`, `Util%`, `Last Checked`) before making any co-location decision.
 
 If **any** RAM/CPU/disk threshold is exceeded on all servers, do not launch — wait for a running job to finish, then re-check (poll every 60 seconds).
 
 #### F.3: Saturation Loop
 
-**Trigger**: run at session start and after every job completes. Goal: fill ALL available server capacity before stopping.
+**Trigger**: run at session start and after every job completes. Goal: fill ALL available GPU capacity before stopping.
 
 ```
 LOOP:
-  1. Check active jobs on ALL servers (tmux list-sessions | grep paperclaw-)
-  2. Run live resource check (F.2) on ALL connected servers simultaneously
-  3. For each server that passes thresholds (F.1):
-       For each queued job (by priority order from Job Queue in state.md):
-         - Push codebase to that server (Appendix H push)
-         - Launch job via tmux (local: add nice/taskset/ulimit — F.1)
-         - Update Job Queue: mark running + assigned server
-         - Log launch in log.md with resource snapshot
-  4. Continue step 3 until queue is empty OR all servers are at capacity
-  5. If all servers at capacity: monitor; re-run loop when any job finishes
+  0. Re-read ./experiment/server.md and compare to active server list:
+     - Any server whose Connection block was REMOVED: immediately stop scheduling jobs to it;
+       remove it from GPU Slots and Servers table in state.md; log "server <name> removed by user"
+     - Any server whose Connection block was ADDED (Status: untested or absent): run Phase 0
+       Steps 0.2–0.5 for it before continuing the loop
+
+  1. Run live resource check (F.2) on ALL connected servers simultaneously
+     → Update GPU Slots table in state.md (VRAM Free, Util%, Last Checked)
+
+  2. For each server that passes RAM/CPU/disk thresholds (F.1):
+       a. Collect all queued jobs for this server (by priority order)
+       b. For each GPU on this server (index 0, 1, 2, ...):
+            - If GPU has no running jobs:
+                → Assign next queued job; no memory check needed; mark GPU slot busy
+            - If GPU already has running jobs (co-location candidate):
+                → Check: memory.free > job's Est. VRAM × 1.1  AND  utilization.gpu < 70%
+                → If both pass: assign job to this GPU; mark slot busy
+                → If either fails: skip this GPU; try next GPU or next server
+       c. After all GPU assignments for this server are decided:
+            - Push codebase to this server ONCE (not per job)
+            - Launch all assigned jobs in parallel, each with CUDA_VISIBLE_DEVICES=<gpu_index>
+            - Update GPU Slots, Job Queue, Active Jobs in state.md
+            - Log all launches in log.md with resource snapshot
+
+  3. Continue until queue is empty OR no GPU on any server can accept another job
+
+  4. If no capacity anywhere: poll every 60s; re-run loop when any job finishes
 ```
 
-**Key rule**: never stop after filling one slot. Fill ALL available capacity in one pass.
+**Key rules:**
+- Never stop after filling one slot — fill ALL available capacity in one pass
+- One push per server per loop pass, not one push per job
+- CPU-only jobs (`Est. VRAM = 0`): assign `CUDA_VISIBLE_DEVICES=""`, skip GPU slot tracking entirely
+- After each job completes: query `nvidia-smi` for that GPU, update GPU Slots, record `Actual VRAM` in Active Jobs
 
-**Server selection per job**: prefer the server with the lowest current load (CPU + RAM). Honor TIP hints (e.g., "slow SSD — avoid large downloads") when choosing between equivalent options. For local servers: verify conservative thresholds (F.1) before assigning any job.
+**Server selection**: prefer the server with the most free GPU slots and lowest RAM/CPU load. Honor TIP hints when choosing between equivalent options. For local servers: verify conservative thresholds (F.1) before assigning any job.
 
 #### F.4: Monitoring Active Jobs (Multi-Server)
 
@@ -1260,7 +1305,7 @@ Each `## Connection - Server <name>` block contains these fields:
 
 **To add a server**: Append a new `## Connection - Server <name>` block with `Host`, `Port`, `User`, `Working Directory` filled in. Leave `SSH shorthand`, `Note`, `Status` blank or set `Status: untested`. Tell the skill "I've updated server.md" and the skill will probe the new server, fill in those fields, and write the Hardware/Scheduling sections.
 
-**To remove a server**: Delete its entire set of blocks (Connection + Hardware + Software Environment + Scheduling Capacity). The skill will stop using it.
+**To remove a server**: Delete its entire set of blocks (Connection + Hardware + Software Environment + Scheduling Capacity). The skill detects the removal at the start of every saturation loop pass (F.3 Step 0) and immediately stops scheduling jobs to it. You do not need to tell the skill — it re-reads server.md before every scheduling decision. If you want an immediate effect mid-session, say "I've updated server.md".
 
 **`Note` field**: Auto-written by the skill each time it probes the server. Contains a compact summary (hardware, OS, users). If you want to add a permanent note that the skill won't overwrite, append `<!--user-note-->` after your text: the skill will preserve everything before that marker.
 
@@ -1287,7 +1332,7 @@ Each `## Connection - Server <name>` block contains these fields:
 11. **Never store secrets** — Sudo password in session memory only
 12. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
 13. **Local is source of truth** — All code lives in `./experiment/codebase/`; never edit code on remote; push before each job, pull after
-14. **Check RAM/CPU/disk before launch; never pre-check GPU memory** — Just launch GPU jobs; handle OOM reactively (Appendix D)
+14. **Check RAM/CPU/disk before every launch** — For GPU co-location (placing a second job on an occupied GPU): do a soft pre-check (`memory.free > Est.VRAM × 1.1 AND utilization.gpu < 70%`); if it fails, skip that GPU and try another. For the first job on an idle GPU: no pre-check needed — launch and handle OOM reactively (Appendix D)
 15. **Saturate remote servers** — Fill all available server capacity via the job queue (Appendix F.7) and saturation loop (Appendix F.3)
 16. **Protect the local machine** — Local server (`Local?: yes`) gets `nice -n 19`, `taskset`, `ulimit`, and conservative RAM/CPU thresholds; Claude Code must not be starved
 17. **Push is targeted** — Push codebase only to the server receiving the next job; never mass-push to all servers during a debug cycle

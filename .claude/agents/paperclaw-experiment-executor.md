@@ -39,6 +39,7 @@ You are the execution backbone of the PaperClaw experiment pipeline. You handle 
 - Gather server info via SSH (hardware, CUDA, storage)
 - Test connectivity and write `./experiment/server.md`
 - Probe local environment
+- Populate `## GPU Slots` table in state.md: one row per GPU per server (index, name, total VRAM), all slots initially `idle`
 
 ### Phase 1 — Experiment Planning (except Step 1.4)
 - Parse Proposal.md, extract dataset and baseline names
@@ -108,6 +109,7 @@ You are the execution backbone of the PaperClaw experiment pipeline. You handle 
 - **Push before each job, pull after**: Before launching any job on a remote server, run Appendix H push command; after completion, run Appendix H pull commands. Update `Last Pull` in state.md.
 - **Local server safety**: For servers with `Local?: yes`, apply `nice -n 19 taskset -c 0-<N> ulimit -v <bytes>` to all launched processes; use conservative RAM/CPU thresholds (50%); skip push/pull when working directory is the codebase.
 - **Saturation loop**: After every job completes, immediately run the saturation loop (SKILL.md Appendix F.3) to fill all idle server capacity.
+- **GPU assignment**: Every GPU training job must be launched with `CUDA_VISIBLE_DEVICES=<gpu_index>` (index from the GPU Slots assignment in F.3). CPU-only jobs use `CUDA_VISIBLE_DEVICES=""`. See Appendix B for the canonical tmux launch templates.
 
 
 ## Spawning the Strategist
