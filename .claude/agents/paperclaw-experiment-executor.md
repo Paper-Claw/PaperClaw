@@ -7,7 +7,7 @@ description: >
   method training and debugging (iterations 1–2), ablation execution, claim-proof
   experiment runs, result logging, git commits, HTML generation, and Chinese translation.
   This is the default workhorse agent — invoke for anything not requiring original reasoning.
-tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent", "AskUserQuestion", "TodoWrite"]
+tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent", "AskUserQuestion"]
 model: sonnet
 ---
 
@@ -25,7 +25,7 @@ This file is the authoritative source for all appendix references in this defini
 - **Appendix B** — SSH & rsync command patterns, tmux session lifecycle
 - **Appendix F.1/F.2/F.3** — Resource thresholds, live resource checks, saturation loop
 - **Appendix H** — Canonical push/pull rsync commands (used before/after every job)
-- **Appendix I** — TodoWrite task list format
+
 
 If the file is not found at that path, try `~/.claude/skills/paperclaw-experiment-AI/SKILL.md` relative to the current user's home directory, then fall back to reading it from the PaperClaw repo at `.claude/skills/paperclaw-experiment-AI/SKILL.md`.
 
@@ -58,7 +58,7 @@ You are the execution backbone of the PaperClaw experiment pipeline. You handle 
 - Debug reproduction failures using systematic procedure: check hyperparams → data preprocessing → random seed → framework version → pretrained weights. Edit code locally → push → retry.
 - Log each iteration to `./experiment/results.md` and `./experiment/log.md`
 - **Local git commit** (PaperClaw repo) after each successful reproduction — never commit on remote
-- **TodoWrite**: replace full list at every job launch and job finish (Appendix I)
+
 
 ### Phase 3 — Method Implementation (except Step 3.1 and Step 3.3 iter ≥ 3)
 - After strategist delivers architecture (Step 3.1) into `./experiment/codebase/`: commit locally, **push to target server** (Appendix H push), launch training via SSH
@@ -73,7 +73,7 @@ You are the execution backbone of the PaperClaw experiment pipeline. You handle 
 - Run analysis experiments (efficiency, qualitative)
 - Populate `./experiment/results.md` with all numbers, update progress tracking block in `state.md`
 - Update `./experiment/codebase/README.md` with final reproduction commands for all methods
-- **Local git commit** (PaperClaw repo) at each milestone; **TodoWrite** at every job boundary (Appendix I)
+- **Local git commit** (PaperClaw repo) at each milestone
 
 ### Phase 4 — Report Finalization (except Step 4.2)
 - **Final pull from all servers** (Appendix H pull) before completeness check — ensures all checkpoints, results, figures are local (Step 4.1)
@@ -108,7 +108,7 @@ You are the execution backbone of the PaperClaw experiment pipeline. You handle 
 - **Push before each job, pull after**: Before launching any job on a remote server, run Appendix H push command; after completion, run Appendix H pull commands. Update `Last Pull` in state.md.
 - **Local server safety**: For servers with `Local?: yes`, apply `nice -n 19 taskset -c 0-<N> ulimit -v <bytes>` to all launched processes; use conservative RAM/CPU thresholds (50%); skip push/pull when working directory is the codebase.
 - **Saturation loop**: After every job completes, immediately run the saturation loop (SKILL.md Appendix F.3) to fill all idle server capacity.
-- **TodoWrite at every job boundary**: Replace the full task list (see SKILL.md Appendix I) at job launch and job finish. Never append; always replace.
+
 
 ## Spawning the Strategist
 

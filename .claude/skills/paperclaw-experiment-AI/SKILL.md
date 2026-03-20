@@ -576,13 +576,13 @@ Use the project's unified training and evaluation entry points with each baselin
 3. Assign job to best available server per saturation loop (Appendix F.3).
 4. For local servers: apply conservative thresholds (Appendix F.1) and wrap command with `nice -n 19 taskset -c 0-<N>` and `ulimit`.
 5. Launch via tmux: `paperclaw-train-baseline-<method>`.
-6. Update Job Queue table in state.md; update **TodoWrite** (see Appendix I).
+6. Update Job Queue table in state.md.
 
 **After each job completes**:
 1. Pull artifacts from that server (Appendix H pull commands).
 2. Update `Last Pull` in state.md Servers table.
 3. Immediately run the saturation loop (Appendix F.3) to fill any freed slot.
-4. Update **TodoWrite** to mark job completed with result metric.
+4. Update Job Queue and Active Jobs in state.md to mark job completed with result metric.
 
 > **Important**: Jobs that share the same GPU or write to the same files are NOT independent — run them sequentially. Only parallelize truly independent experiments (different methods, different datasets, different GPUs).
 
@@ -666,7 +666,7 @@ After training runs successfully: local git commit + pull artifacts:
 ```bash
 git add experiment/codebase/ && git commit -m "feat(method): initial training working on <dataset>"
 ```
-Pull checkpoints and results from server (Appendix H pull commands). Update **TodoWrite**.
+Pull checkpoints and results from server (Appendix H pull commands). Update Active Jobs in state.md.
 
 #### Step 3.3: Iterative Performance Improvement
 
@@ -967,7 +967,7 @@ git commit -m "<message>"
 | `Read` | Proposal.md, plan.md, results.md, comparison.md, ours.md |
 | `Write` / `Edit` | All working files, report files |
 | `WebSearch` / `WebFetch` | Paper search, repo discovery, dataset sources |
-| `TodoWrite` | Phase/step progress tracking |
+
 | `Agent` | Dispatch strategist/executor sub-agents |
 
 ### F. Resource-Aware Parallel Scheduling
@@ -1042,7 +1042,6 @@ LOOP:
          - Push codebase to that server (Appendix H push)
          - Launch job via tmux (local: add nice/taskset/ulimit — F.1)
          - Update Job Queue: mark running + assigned server
-         - Update TodoWrite (Appendix I)
          - Log launch in log.md with resource snapshot
   4. Continue step 3 until queue is empty OR all servers are at capacity
   5. If all servers at capacity: monitor; re-run loop when any job finishes
@@ -1283,7 +1282,7 @@ Each `## Connection - Server <name>` block contains these fields:
 6. **Beat all baselines** — Our method must win on all datasets before reporting
 7. **Prove every claim** — Every non-trivial claim must have a dedicated claim-proof experiment
 8. **Expand comparison coverage** — Mine baselines' comparison tables to add SOTA methods and datasets
-9. **Track progress** — Update state.md at every job boundary; update TodoWrite at every job start/finish
+9. **Track progress** — Update state.md (Job Queue, Active Jobs, Progress Tracking) at every job boundary
 10. **Reports serve two audiences** — HTML for quick review, MD (EN + CN) for paper writing
 11. **Never store secrets** — Sudo password in session memory only
 12. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
@@ -1363,42 +1362,6 @@ rsync -avz \
 
 ---
 
-### I. TodoWrite Format
-
-Use `TodoWrite` to replace the entire task list at every job boundary. The list must be **flat** (no indentation), with naming conventions in the content field to convey structure.
-
-#### Naming Convention
-
-```
-[Phase/Step] <server>: <description> — <STATUS>
-```
-
-- **Phase/Step**: `P0`, `P1`, `P2`, `P3`, `P4` or `P2.3`, `P3.2`, etc.
-- **server**: server name (e.g., `main`, `gpu2`, `local`) or `local` for local-only tasks
-- **STATUS**: `pending` / `in_progress` / `completed` / `blocked`
-
-#### Example List at a Job Boundary
-
-```
-P2.3 main: Baseline-A training (ResNet-50, CIFAR-10) — in_progress
-P2.3 gpu2: Baseline-B training (ViT-B/16, CIFAR-10) — in_progress
-P2.3 local: Baseline-C CPU training (logistic regression) — in_progress
-P2.3 local: Pull artifacts from main after job — pending
-P2.3 local: Pull artifacts from gpu2 after job — pending
-P3 local: Push codebase + launch our method on main — pending
-P3 local: Saturation loop after P2 completes — pending
-P4 local: Completeness check & report — pending
-```
-
-#### When to Replace the List
-
-Replace the full list (not append) at these moments:
-1. **Phase start**: Set all tasks for the phase to `pending`
-2. **Job launch**: Mark launched job as `in_progress`; add pull task as `pending`
-3. **Job finish**: Mark job `completed`; mark pull task `in_progress`; run saturation loop; add new jobs launched as `in_progress`
-4. **Blocker**: Add a `blocked` entry with the blocking reason; remove when resolved
-
----
 
 ## Reference Files
 
