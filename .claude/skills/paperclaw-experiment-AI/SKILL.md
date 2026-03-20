@@ -112,9 +112,9 @@ When starting a new session, check if `./experiment/state.md` exists:
 1. **If exists** → Read state.md to determine current phase/step
 2. **Read log.md** for recent events and context
 3. **Check codebase exists** — If state.md shows phase ≥ 1, verify `./experiment/codebase/` exists. If missing, ask the user before proceeding (something went wrong in a previous session).
-4. **Detect server.md changes** — Re-read `./experiment/server.md` and compare to the Servers table in state.md:
-   - Any server whose `Status:` is `untested` or whose name is absent from the Servers table is **new**. Run Phase 0 Steps 0.2–0.5 for those servers only (skip Step 0.1). Then, if phase ≥ 1: **push the current codebase** to the new server (Appendix H push command) and create its `.venv` — so it is ready to receive jobs from the saturation loop.
-   - Any server that was in the Servers table but whose `## Connection - Server <name>` block is now **absent from server.md** has been removed by the user. Remove it from the Servers table and GPU Slots in state.md; cancel any queued jobs assigned to it; log the removal.
+4. **Sync server.md → state.md** — Re-read `./experiment/server.md` and compare all `## Connection <name>` blocks to the Servers table in state.md:
+   - Any server whose name is absent from the Servers table is **new** → add a row to the Servers table with `Status: untested`. Run Phase 0 Steps 0.2–0.5 for those servers only (skip Step 0.1). Then, if phase ≥ 1: **push the current codebase** to the new server (Appendix H push command) and create its `.venv` — so it is ready to receive jobs from the saturation loop.
+   - Any server that was in the Servers table but whose `## Connection <name>` block is now **absent from server.md** has been removed by the user. Remove it from the Servers table, GPU Slots, and Server Details in state.md; cancel any queued jobs assigned to it; log the removal.
    - Servers still present are handled by Step 5 below.
    - This step also fires when the user explicitly says "I've updated server.md", "I removed a server", "I added a server", etc.
 5. **Check all known servers** (Status was `connected` or `disconnected`) via SSH:
@@ -151,9 +151,9 @@ updated: <timestamp>
 
 | Name | Host | Status | GPUs | Free RAM (at last check) | Last Checked | Local? | Last Pull |
 |------|------|--------|------|--------------------------|--------------|--------|-----------|
-| main | gpu1.example.com | connected | 4× A100 80G | 120G / 512G | <timestamp> | no | <timestamp> |
-| gpu2 | gpu2.example.com | disconnected | — | — | <timestamp> | no | never |
-| local | localhost | connected | 1× RTX 3090 | 18G / 32G | <timestamp> | **yes** | <timestamp> |
+| main | alice@gpu1.example.com | connected | 4× A100 80G | 120G / 512G | <timestamp> | no | <timestamp> |
+| gpu2 | bob@192.168.1.42 | disconnected | — | — | <timestamp> | no | never |
+| local | alice@localhost | connected | 1× RTX 3090 | 18G / 32G | <timestamp> | **yes** | <timestamp> |
 
 ## GPU Slots
 
@@ -184,6 +184,57 @@ updated: <timestamp>
 |------------|--------|-----|-----------|-----------|-------------|---------|--------|
 | paperclaw-baseline-bert | main | 0 | Baseline BERT on Dataset A | 12000 MiB | 11200 MiB | <timestamp> | running |
 | paperclaw-baseline-gpt2 | local | 0 | Baseline GPT-2 on Dataset B | 8000 MiB | — | <timestamp> | running |
+
+## Server Details
+
+### Hardware - main
+<!-- Updated by skill on each probe — do not edit -->
+| GPU | Name | Total (MiB) | Free at probe (MiB) |
+|-----|------|-------------|----------------------|
+| 0   | A100 80GB SXM4 | 81920 | 71200 |
+
+- CPU: 128 cores / 256 threads (AMD EPYC 7763)
+- Total RAM: 512 GiB  |  In use at probe: 82 GiB
+- Disk (/home/alice/paperclaw-experiments): 20 TiB total, 14 TiB free
+- Active users at probe: 3
+
+### Software Environment - main
+<!-- Updated by skill on each probe — do not edit -->
+- OS: Ubuntu 22.04.3 LTS
+- Python: 3.10.12
+- CUDA: 12.1 / Driver: 530.30.02
+
+### Scheduling Capacity - main
+<!-- Updated by skill on each probe — do not edit -->
+- GPUs: 8 × A100 80G (81920 MiB each)
+- RAM Headroom: reserve 20% (≈102 GiB) for OS + other users
+- Thresholds: RAM > 80%, CPU > 85% (1-min avg), Disk > 90%
+
+---
+
+### Hardware - local
+<!-- Updated by skill on each probe — do not edit -->
+- CPU: 12 cores / 12 threads (Apple M2 Pro)
+- Total RAM: 32 GiB  |  In use at probe: 8 GiB
+- Disk (/home/alice/PaperClaw/experiment/codebase): 1 TiB total, 600 GiB free
+
+### Software Environment - local
+<!-- Updated by skill on each probe — do not edit -->
+- OS: macOS 14.3
+- Python: 3.11.6
+- CUDA: N/A
+
+### Scheduling Capacity - local
+<!-- Updated by skill on each probe — do not edit -->
+- GPUs: none
+- RAM Headroom: reserve max(4 GiB, 20% total) for Claude Code + OS
+- Thresholds: RAM > 50% (conservative — local), CPU > 50% (1-min avg, conservative — local), Disk > 90%
+
+## Local Machine
+<!-- Updated by skill at Phase 0 — do not edit -->
+- CPU: Apple M2 Pro, 12 cores
+- RAM: 32 GiB
+- OS: macOS 14.3
 ```
 
 **Update state.md** at: phase start, step start/end, blockers, user input requests, job start/finish, concurrent job launch/completion.
@@ -223,11 +274,11 @@ All internal files live under `./experiment/`:
 | File/Dir | Type | Purpose |
 |----------|------|---------|
 | `codebase/` | **Git-tracked directory** | All experiment code and configs — the local source of truth. Edits always happen here; code is pushed to remote before each job. |
-| `server.md` | Partial-overwrite | Multi-server config: user-editable Connection blocks + skill-written Hardware/Scheduling sections |
+| `server.md` | User-editable | Multi-server config: only user-written Connection blocks (Host, Port, Working Directory, Activation, Password, Note) |
 | `plan.md` | Overwrite | Experiment plan (datasets, baselines, metrics, schedule) |
 | `comparison.md` | Append-only | Baseline reproduction log (iterations, errors, fixes) |
 | `ours.md` | Append-only | Our method implementation log (iterations, errors, fixes) |
-| `state.md` | Overwrite | Current phase, step, blockers, progress tracking, job queue |
+| `state.md` | Overwrite | Current phase, step, blockers, progress tracking, job queue, server hardware/scheduling data |
 | `log.md` | Append-only | Timestamped event log across all phases |
 | `results.md` | Overwrite | Running experiment result tables (human-readable summary) |
 | `checkpoints/` | **Gitignored directory** | Model checkpoints pulled from remote after training (`checkpoints/<server-name>/`) |
@@ -287,40 +338,44 @@ Log events for: phase start/end, reproduction complete, iteration start/end, err
 
 Establish reliable connections to all configured experiment servers, probe their **live** hardware state, and record per-server scheduling capacity.
 
-> **Multi-server design**: Multiple servers can be configured in `server.md`. The user owns the `## Connection - Server <name>` blocks; the skill owns the `## Hardware - Server <name>`, `## Software Environment - Server <name>`, and `## Scheduling Capacity - Server <name>` blocks. Inside each Connection block, the skill auto-updates only the four designated skill-managed fields: `SSH shorthand`, `Note`, `Status`, and `Activation` (if missing). All other Connection content (Host, Port, User, Working Directory, TIP) is user-owned and never overwritten by the skill.
+> **Multi-server design**: Multiple servers can be configured in `server.md`. The file is entirely user-owned — the skill never writes to it. Each `## Connection <name>` block contains only user-provided fields (`Host`, `Port`, `Working Directory`, and optionally `Activation`, `Password`, `Note`). All skill-generated data (hardware specs, software environment, scheduling capacity, connection status) is written exclusively to `state.md`.
 
 ### Steps
 
 #### Step 0.1: Read or Initialize Server Configuration
 
-1. Check if `./experiment/server.md` exists and contains `## Connection - Server` blocks.
-   - **If yes**: Parse all `## Connection - Server <name>` blocks. Extract `Host`, `Port`, `User`, `Working Directory`, `Activation` (default: `source <workdir>/.venv/bin/activate`), `Status`, and `TIP` for each server. Do NOT ask the user for credentials already present.
+1. Check if `./experiment/server.md` exists and contains `## Connection` blocks.
+   - **If yes**: Parse all `## Connection <name>` blocks. Extract `Host` (format: `user@hostname`), `Port`, `Working Directory`, `Activation` (default: `source <workdir>/.venv/bin/activate`), `Password` (optional), and `Note` (optional) for each server. Do NOT ask the user for credentials already present.
    - **If no (or no Connection blocks found)**: Prompt the user with `AskUserQuestion`:
-     1. SSH host (e.g., `user@hostname` or IP)
+     1. SSH host (format: `user@hostname` or `user@IP`)
      2. SSH port (default 22)
-     3. SSH username
-     4. Working directory on the server (e.g., `/home/user/experiments`)
-     Then write the first `## Connection - Server main` block into `server.md` (see Appendix G for full format, including auto-filled `SSH shorthand`, `Note`, `Status`). Ask: "Would you like to add more servers? If so, please add `## Connection - Server <name>` blocks to `./experiment/server.md` following the format in Appendix G, then confirm." **Wait for the user to confirm, then re-read server.md and proceed to Step 0.2 with all parsed servers.**
+     3. Working directory on the server (e.g., `/home/user/experiments`)
+     4. SSH password (optional — leave blank if using key-based auth)
+     Then write `./experiment/server.md` with the first `## Connection main` block (see Appendix G for format). Ask: "Would you like to add more servers? If so, please add `## Connection <name>` blocks to `./experiment/server.md` following the format in Appendix G, then confirm." **Wait for the user to confirm, then re-read server.md and proceed to Step 0.2 with all parsed servers.**
 
 > **Sudo password**: Do NOT ask upfront. Ask only when a specific command requires it. Never store in any file — session memory only. Redact in logs as `<REDACTED>`.
 
-> **Adding servers later**: The user can add new `## Connection - Server <name>` blocks to `server.md` at any time and say "I've updated server.md" or "server info is updated." The skill will re-run Steps 0.2–0.5 for any server whose `status:` is `untested` or missing.
+> **Adding servers later**: The user can add new `## Connection <name>` blocks to `server.md` at any time and say "I've updated server.md" or "server info is updated." The skill will re-run Steps 0.2–0.5 for any server absent from the Servers table in state.md.
 
 #### Step 0.2: Test SSH Connections & Detect Local Servers (All Servers)
 
 For each server parsed in Step 0.1:
 
-**Local server detection**: Before SSH-testing, check if the server is the local machine. A server is local if its `Host` is `localhost`, `127.0.0.1`, or matches the output of `hostname -f` / `hostname`. If local:
-- Resolve `Working Directory` to an absolute path: `realpath <workdir>`. If the user provided a relative path, resolve it and update the Connection block's `SSH shorthand` accordingly.
+**Local server detection**: Before SSH-testing, check if the server is the local machine. A server is local if the hostname part of `Host` (everything after `@`) is `localhost`, `127.0.0.1`, or matches the output of `hostname -f` / `hostname`. If local:
+- Resolve `Working Directory` to an absolute path: `realpath <workdir>`. If the user provided a relative path, resolve it and use the absolute path in all subsequent commands.
 - Mark `Local?: yes` in state.md Servers table.
 - SSH test still runs normally (`ssh localhost` works and is used for all commands for consistency).
 
 ```bash
-ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new <user>@<host> -p <port> "echo 'Connection OK'"
+# Without password (key-based auth):
+ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p <Port> <Host> "echo 'Connection OK'"
+
+# With password field set:
+sshpass -p '<Password>' ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p <Port> <Host> "echo 'Connection OK'"
 ```
 
-- **Success**: Update `- status: connected` in that server's Connection block.
-- **Failure**: Update `- status: disconnected`, log the error, and continue with remaining servers. Report all failures to the user at the end of Phase 0, but do NOT stop — proceed with connected servers.
+- **Success**: Update the `Status` field to `connected` in state.md Servers table.
+- **Failure**: Update `Status` to `disconnected` in state.md, log the error, and continue with remaining servers. Report all failures to the user at the end of Phase 0, but do NOT stop — proceed with connected servers.
 
 If **no** servers are reachable: ask user (wait / abort).
 
@@ -348,15 +403,9 @@ ssh <server> "test -d <workdir> && test -w <workdir> && echo 'OK' || echo 'FAIL'
 
 If a workdir is not empty, ask the user: proceed (preserve existing files) or choose a different directory?
 
-#### Step 0.5: Update Connection Block Fields + Write Hardware/Capacity Sections
+#### Step 0.5: Write Hardware/Capacity Sections to state.md
 
-For each connected server, update the following fields **inside** the `## Connection - Server <name>` block:
-- `SSH shorthand`: set to `ssh -p <Port> <User>@<Host>`
-- `Note`: set to `<N>× <GPU name> | <OS> | Python <version> | CUDA <version> | <K> users active at last probe` (preserve any `<!--user-note-->` suffix if present)
-- `Status`: set to `connected` or `disconnected`
-- `Activation`: if missing, set the default: `source <Working Directory>/.venv/bin/activate`
-
-Then write/overwrite the `## Hardware - Server <name>`, `## Software Environment - Server <name>`, and `## Scheduling Capacity - Server <name>` sections. Do NOT modify any other user-written content in the Connection block.
+For each connected server, write/overwrite the `### Hardware - <name>`, `### Software Environment - <name>`, and `### Scheduling Capacity - <name>` subsections under `## Server Details` in state.md. Do NOT modify server.md — it is entirely user-owned.
 
 Per-server scheduling capacity (see Appendix F and G):
 - Number of GPUs, per-GPU total memory (MiB), and **free memory at probe time**
@@ -367,7 +416,7 @@ Per-server scheduling capacity (see Appendix F and G):
 
 #### Step 0.6: Probe Local Hardware & Initialize Local Directories
 
-**a) Detect local specs** (`system_profiler` on macOS, `/proc/cpuinfo` on Linux) and write/overwrite a `## Local Machine` section in `server.md`.
+**a) Detect local specs** (`system_profiler` on macOS, `/proc/cpuinfo` on Linux) and write/overwrite the `## Local Machine` section in `state.md`.
 
 **b) Create local artifact directories** (gitignored; used as pull targets after remote jobs):
 ```bash
@@ -388,8 +437,8 @@ experiment/figures/
 
 ### Completion Criteria
 
-- [x] All servers in server.md tested; `status:` updated for each
-- [x] Hardware + Scheduling Capacity written for each connected server
+- [x] All servers in server.md tested; `Status` updated in state.md Servers table for each
+- [x] Hardware + Scheduling Capacity written to state.md for each connected server
 - [x] At least one server connected and working directory is writable
 
 ---
@@ -508,7 +557,7 @@ __pycache__/
 .env
 ```
 
-Write an initial `README.md` documenting the project structure, installation, and basic usage.
+Write an initial `README.md` (English) documenting the project structure, installation, and basic usage. Also write `README_zh.md` as a Chinese translation of `README.md`. Both files are maintained in sync — whenever `README.md` is updated, update `README_zh.md` accordingly.
 
 **b) Local git commit** (PaperClaw repo, not a new git init):
 ```bash
@@ -880,7 +929,9 @@ Decision log format:
 
 ### B. SSH & Rsync Command Patterns
 
-All remote commands use the `Host`, `Port`, `User`, `Working Directory`, and `Activation` fields from the server's Connection block in server.md.
+All remote commands use the `Host` (format: `user@hostname`), `Port`, `Working Directory`, `Activation`, and `Password` (if present) fields from the server's `## Connection <name>` block in server.md.
+
+**Password handling**: If a `Password` field is set, prefix every `ssh` and `rsync` command with `sshpass -p '<Password>'`. If no `Password` field, use key-based auth (no prefix).
 
 **Sanitize all IDs before use in shell commands.** Method names, dataset names, and other strings from Proposal.md may contain spaces, parentheses, or special characters that break shell commands. Always sanitize first:
 
@@ -891,20 +942,20 @@ safe_id=$(echo "${raw_name}" | tr -cs 'a-zA-Z0-9_-' '-' | sed 's/-\+/-/g' | sed 
 ```
 
 ```bash
-# Simple command
-ssh -o ConnectTimeout=30 -p <Port> <User>@<Host> "cd '<Working Directory>' && <command>"
+# Simple command  (Host = user@hostname; prefix with sshpass if Password is set)
+ssh -o ConnectTimeout=30 -p <Port> <Host> "cd '<Working Directory>' && <command>"
 
 # With venv  (use the Activation field, not a hardcoded path)
-ssh -o ConnectTimeout=30 -p <Port> <User>@<Host> "cd '<Working Directory>' && <Activation> && <command>"
+ssh -o ConnectTimeout=30 -p <Port> <Host> "cd '<Working Directory>' && <Activation> && <command>"
 
 # Long-running training (use tmux, NOT nohup)
 # For LOCAL servers: prefix with nice/taskset/ulimit (see Appendix F.1)
 # ALWAYS use sanitized safe_id, never raw method/dataset names
 # Set gpu_index from the GPU Slots assignment (F.3); use "" for CPU-only jobs
-ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<safe_id> 'cd <workdir> && <Activation> && CUDA_VISIBLE_DEVICES=<gpu_index> python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<safe_id>-done'"
+ssh -p <Port> <Host> "tmux new-session -d -s paperclaw-<safe_id> 'cd <workdir> && <Activation> && CUDA_VISIBLE_DEVICES=<gpu_index> python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<safe_id>-done'"
 
 # CPU-only job (evaluation, analysis, data download) — no GPU slot consumed
-ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<safe_id> 'cd <workdir> && <Activation> && CUDA_VISIBLE_DEVICES="" python eval.py --config <config> 2>&1 | tee eval.log; tmux wait-for -S paperclaw-<safe_id>-done'"
+ssh -p <Port> <Host> "tmux new-session -d -s paperclaw-<safe_id> 'cd <workdir> && <Activation> && CUDA_VISIBLE_DEVICES="" python eval.py --config <config> 2>&1 | tee eval.log; tmux wait-for -S paperclaw-<safe_id>-done'"
 
 # Check training status
 ssh <server> "tmux capture-pane -t paperclaw-<safe_id> -p | tail -50"
@@ -1015,7 +1066,7 @@ After each job's first checkpoint, query actual VRAM used and record in the Acti
 ALLOWED_CORES=$(($(nproc) / 2 - 1))
 RESERVED_MB=$(python3 -c "import os; mem=$(free -m | awk '/Mem:/{print $2}'); print(max(4096, int(mem*0.20)))")
 ALLOWED_MB=$(($(free -m | awk '/Mem:/{print $4}') - RESERVED_MB))
-ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<id> \
+ssh -p <Port> <Host> "tmux new-session -d -s paperclaw-<id> \
   'cd <workdir> && <Activation> && \
    nice -n 19 taskset -c 0-${ALLOWED_CORES} \
    bash -c \"ulimit -v $((ALLOWED_MB * 1024)); python train.py --config <cfg> 2>&1 | tee train.log\"; \
@@ -1160,30 +1211,24 @@ If a job triggers an OOM kill or the machine becomes unresponsive (can happen mo
 2. Log the incident in log.md with the resource state at the time (include `who` output to note if other users were active).
 3. For subsequent jobs on that server: reduce batch size or enable gradient checkpointing.
 4. If a single job OOMs even alone → handle per Appendix D.
-5. If a server repeatedly causes OOM incidents, update its `Note` field in server.md with a warning (e.g., `Note: ... | ⚠️ OOM-prone — reduce batch size`) so future sessions are aware. Do NOT write to TIP (that is user-owned).
+5. If a server repeatedly causes OOM incidents, add a warning to that server's `### Hardware - <name>` section in state.md (e.g., `⚠️ OOM-prone — reduce batch size`) so future sessions are aware.
 
 ### G. Server Configuration Format (server.md)
 
-`./experiment/server.md` is the single source of truth for all server configurations. It has two kinds of content:
-
-- **User-owned blocks** (`## Connection - Server <name>`): The user writes and edits these. Inside each block, four fields are **skill-managed** (auto-updated on every probe): `SSH shorthand`, `Note`, `Status`, `Activation` (only if missing). All other Connection content (Host, Port, User, Working Directory, TIP) is never touched by the skill.
-- **Skill-owned blocks** (`## Hardware`, `## Software Environment`, `## Scheduling Capacity` per server, and `## Local Machine`): The skill writes and overwrites these entirely on every probe. Users should not edit these.
+`./experiment/server.md` is entirely **user-owned**. The skill never writes to it. It contains only `## Connection <name>` blocks — one per server.
 
 #### Connection Block Fields
 
-Each `## Connection - Server <name>` block contains these fields:
+| Field | Required | Description |
+|-------|----------|-------------|
+| `Host` | Yes | `user@hostname` or `user@IP` |
+| `Port` | Yes | SSH port (default: 22) |
+| `Working Directory` | Yes | Remote working directory for experiments |
+| `Activation` | Optional | venv activation command. Default: `source <Working Directory>/.venv/bin/activate`. Override if venv is elsewhere. |
+| `Password` | Optional | SSH password. Omit if using key-based auth. When present, used as `sshpass -p '<Password>' ssh ...` |
+| `Note` | Optional | Free-form user note about this server. Never overwritten by the skill. |
 
-| Field | Written by | Description |
-|-------|-----------|-------------|
-| `Host` | User | Hostname or IP address |
-| `Port` | User | SSH port (default: 22) |
-| `User` | User | SSH username |
-| `Working Directory` | User | Remote working directory for experiments |
-| `Activation` | User (optional) | venv activation command. Default: `source <workdir>/.venv/bin/activate`. Override if venv is elsewhere. |
-| `SSH shorthand` | **Skill** (auto-written) | Full SSH command for convenience, e.g. `ssh -p 22 user@host`. Users may edit. |
-| `Note` | **Skill** (auto-written) | One-line summary of server status and key hardware, updated each time the skill probes the server. Users may edit; the skill will overwrite on next probe unless the user adds a `<!--user-note-->` marker. |
-| `Status` | **Skill** (auto-written) | `connected` / `disconnected` / `untested`. Updated by the skill on every connection check. |
-| `TIP` | **User** (optional) | A `> TIP:` blockquote. Free-form hints for the scheduling logic: GPU availability patterns, constraints, best use cases, known issues. The skill reads but never overwrites this. |
+All hardware, scheduling, and status data is stored exclusively in `state.md`.
 
 #### Full server.md Format
 
@@ -1191,129 +1236,36 @@ Each `## Connection - Server <name>` block contains these fields:
 # Experiment Server Configuration
 
 <!--
-  ADD A SERVER: Copy a `## Connection - Server <name>` block, fill in Host/Port/User/Working Directory,
-  and leave SSH shorthand, Note, and Status blank — the skill will fill them in.
-  REMOVE A SERVER: Delete the full block (Connection + Hardware + Software + Scheduling).
-
-  TIP: Add a `> TIP:` blockquote for hints the scheduler should know about this server.
+  ADD A SERVER: Copy a ## Connection <name> block, fill in Host/Port/Working Directory.
+  REMOVE A SERVER: Delete the ## Connection <name> block entirely.
+  The skill detects changes automatically on next startup.
 -->
 
-## Connection - Server main
-- Host: gpu1.example.com
+## Connection main
+- Host: alice@gpu1.example.com
 - Port: 22
-- User: alice
 - Working Directory: /home/alice/paperclaw-experiments
-- Activation: source /home/alice/paperclaw-experiments/.venv/bin/activate
-- SSH shorthand: ssh -p 22 alice@gpu1.example.com
-- Note: 8× A100 80G | Ubuntu 22.04 | Python 3.10 | CUDA 12.1 | 3 users active at last probe
-- Status: connected
 
-> TIP: Shared with the lab — GPU 6 and 7 are often busy during business hours. Best for large-model runs.
-
-## Hardware - Server main
-<!-- Written by the skill — do not edit -->
-| GPU | Name | Total (MiB) | Free at probe (MiB) |
-|-----|------|-------------|----------------------|
-| 0   | A100 80GB SXM4 | 81920 | 71200 |
-...
-
-- CPU: 128 cores / 256 threads (AMD EPYC 7763)
-- Total RAM: 512 GiB  |  In use at probe: 82 GiB
-- Disk (<workdir>): 20 TiB total, 14 TiB free
-- Active users at probe: 3
-
-## Software Environment - Server main
-<!-- Written by the skill — do not edit -->
-- OS: Ubuntu 22.04.3 LTS
-- Python: 3.10.12
-- CUDA: 12.1 / Driver: 530.30.02
-
-## Scheduling Capacity - Server main
-<!-- Written by the skill — do not edit -->
-- GPUs: 8 × A100 80G (81920 MiB each)
-- RAM Headroom: reserve 20% (≈102 GiB) for OS + other users
-
-### Thresholds (live — re-checked before every job launch)
-- RAM usage > 80% of total
-- CPU usage > 85% (1-min avg)
-- Disk usage > 90%
-
----
-
-## Connection - Server gpu2
-- Host: 192.168.1.42
+## Connection gpu2
+- Host: bob@192.168.1.42
 - Port: 2222
-- User: bob
 - Working Directory: /data/bob/experiments
-- Activation: source /data/bob/experiments/.venv/bin/activate
-- SSH shorthand: ssh -p 2222 bob@192.168.1.42
-- Note: (not yet probed)
-- Status: untested
+- Password: mypassword123
+- Note: Personal server, usually idle. Slow SSD — avoid large dataset downloads.
 
-> TIP: Personal server — usually idle. Slow SSD; avoid large dataset downloads here.
-
-## Hardware - Server gpu2
-<!-- not yet probed — will be filled after connection test -->
-
----
-
-## Connection - Server local
-- Host: localhost
+## Connection local
+- Host: alice@localhost
 - Port: 22
-- User: alice
 - Working Directory: /home/alice/PaperClaw/experiment/codebase
 - Activation: source /home/alice/PaperClaw/experiment/codebase/.venv/bin/activate
-- SSH shorthand: ssh -p 22 alice@localhost
-- Note: Local machine — Claude Code runs here; conserve resources
-- Status: connected
-- Local?: yes
-
-> TIP: This is the local machine where Claude Code runs. Apply nice/taskset/ulimit on all jobs. Reserve max(4 GiB, 20% RAM) and max(2 cores, nproc/4) for Claude Code.
-
-## Hardware - Server local
-<!-- Written by the skill — do not edit -->
-- CPU: 12 cores / 12 threads (Apple M2 Pro)
-- Total RAM: 32 GiB  |  In use at probe: 8 GiB
-- Disk (<workdir>): 1 TiB total, 600 GiB free
-
-## Software Environment - Server local
-<!-- Written by the skill — do not edit -->
-- OS: macOS 14.3
-- Python: 3.11.6
-- CUDA: N/A
-
-## Scheduling Capacity - Server local
-<!-- Written by the skill — do not edit -->
-- GPUs: none
-- RAM Headroom: reserve max(4 GiB, 20% total) for Claude Code + OS
-
-### Thresholds (live — re-checked before every job launch)
-- RAM usage > 50% of total (conservative — local)
-- CPU usage > 50% (1-min avg, conservative — local)
-- Disk usage > 90%
-
----
-
-## Local Machine
-<!-- Written by the skill — do not edit -->
-- CPU: Apple M2 Pro, 12 cores
-- RAM: 32 GiB
-- OS: macOS 14.3
+- Note: Local machine — apply nice/taskset/ulimit on all jobs.
 ```
 
 #### Rules for Adding/Removing Servers
 
-**To add a server**: Append a new `## Connection - Server <name>` block with `Host`, `Port`, `User`, `Working Directory` filled in. Leave `SSH shorthand`, `Note`, `Status` blank or set `Status: untested`. Tell the skill "I've updated server.md" and the skill will probe the new server, fill in those fields, and write the Hardware/Scheduling sections.
+**To add a server**: Append a new `## Connection <name>` block with `Host`, `Port`, `Working Directory` filled in. Tell the skill "I've updated server.md" — it will probe the new server and populate its hardware data in state.md.
 
-**To remove a server**: Delete its entire set of blocks (Connection + Hardware + Software Environment + Scheduling Capacity). The skill detects the removal at the start of every saturation loop pass (F.3 Step 0) and immediately stops scheduling jobs to it. You do not need to tell the skill — it re-reads server.md before every scheduling decision. If you want an immediate effect mid-session, say "I've updated server.md".
-
-**`Note` field**: Auto-written by the skill each time it probes the server. Contains a compact summary (hardware, OS, users). If you want to add a permanent note that the skill won't overwrite, append `<!--user-note-->` after your text: the skill will preserve everything before that marker.
-
-**`TIP` field**: The `> TIP:` blockquote is read by the scheduling logic (F.3) when selecting the best server for a job. Use it to document:
-- GPU availability patterns (e.g., "GPU 2-3 busy during business hours")
-- Hardware constraints (e.g., "only 500 GB disk — avoid large datasets")
-- Best use cases (e.g., "best for CPU-heavy preprocessing")
-- Known issues (e.g., "intermittent SSH drops — always use tmux")
+**To remove a server**: Delete its `## Connection <name>` block. The skill detects the removal at the next startup or when told "I've updated server.md" — it immediately removes that server from the Servers table, GPU Slots, and Server Details in state.md and stops scheduling jobs to it.
 
 ---
 
@@ -1329,7 +1281,7 @@ Each `## Connection - Server <name>` block contains these fields:
 8. **Expand comparison coverage** — Mine baselines' comparison tables to add SOTA methods and datasets
 9. **Track progress** — Update state.md (Job Queue, Active Jobs, Progress Tracking) at every job boundary
 10. **Reports serve two audiences** — HTML for quick review, MD (EN + CN) for paper writing
-11. **Never store secrets** — Sudo password in session memory only
+11. **Never store sudo passwords** — Sudo password in session memory only; SSH passwords may be stored in server.md by the user's choice
 12. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
 13. **Local is source of truth** — All code lives in `./experiment/codebase/`; never edit code on remote; push before each job, pull after
 14. **Check RAM/CPU/disk before every launch** — For GPU co-location (placing a second job on an occupied GPU): do a soft pre-check (`memory.free > Est.VRAM × 1.1 AND utilization.gpu < 70%`); if it fails, skip that GPU and try another. For the first job on an idle GPU: no pre-check needed — launch and handle OOM reactively (Appendix D)
@@ -1337,6 +1289,8 @@ Each `## Connection - Server <name>` block contains these fields:
 16. **Protect the local machine** — Local server (`Local?: yes`) gets `nice -n 19`, `taskset`, `ulimit`, and conservative RAM/CPU thresholds; Claude Code must not be starved
 17. **Push is targeted** — Push codebase only to the server receiving the next job; never mass-push to all servers during a debug cycle
 18. **Pipeline prep eagerly** — While jobs run, set up venvs and download datasets on idle servers in parallel
+19. **Pull raw, compute local** — After every job, pull all raw output files (JSON, CSV, logs) to local machine; compute all metrics (mean, std, aggregation) locally from the pulled files; never run metric aggregation scripts on the remote server
+20. **server.md is user-only** — Never write to server.md; it is entirely user-owned; all skill-generated server data (hardware, status, scheduling) lives in state.md
 
 ---
 
@@ -1363,6 +1317,7 @@ experiment/figures/
 #### Canonical PUSH Command (local codebase → remote, before each job)
 
 ```bash
+# Key-based auth:
 rsync -avz --delete \
   --exclude='.venv/' \
   --exclude='__pycache__/' \
@@ -1370,40 +1325,55 @@ rsync -avz --delete \
   --exclude='.git/' \
   -e "ssh -p <Port>" \
   ./experiment/codebase/ \
-  <User>@<Host>:<Working Directory>/
+  <Host>:<Working Directory>/
+
+# With password:
+rsync -avz --delete \
+  --exclude='.venv/' \
+  --exclude='__pycache__/' \
+  --exclude='*.pyc' \
+  --exclude='.git/' \
+  -e "sshpass -p '<Password>' ssh -p <Port>" \
+  ./experiment/codebase/ \
+  <Host>:<Working Directory>/
 ```
 
 - Run this immediately before launching any training/evaluation job on `<server>`.
 - `--delete` ensures stale files from old runs are removed on the remote.
 - **Targeted**: push only to the server receiving the next job (not all servers).
-- **Local server exception**: If `Local?: yes` and `Working Directory` resolves to `./experiment/codebase/` (same path), skip the push — the directory IS the source.
+- **Local server exception**: If the server is local and `Working Directory` resolves to `./experiment/codebase/` (same path), skip the push — the directory IS the source.
 
 #### Canonical PULL Commands (remote artifacts → local, after each job)
+
+Pull all raw results and logs immediately after each job completes. All performance computation (mean, std, aggregation) is done locally after pulling.
 
 ```bash
 # Pull checkpoints
 rsync -avz \
   -e "ssh -p <Port>" \
-  <User>@<Host>:<Working Directory>/checkpoints/ \
+  <Host>:<Working Directory>/checkpoints/ \
   ./experiment/checkpoints/<server-name>/
 
-# Pull results / logs
+# Pull results / logs (raw JSON, CSV, txt — everything)
 rsync -avz \
   -e "ssh -p <Port>" \
-  <User>@<Host>:<Working Directory>/results/ \
+  <Host>:<Working Directory>/results/ \
   ./experiment/results/<server-name>/
 
 # Pull figures
 rsync -avz \
   -e "ssh -p <Port>" \
-  <User>@<Host>:<Working Directory>/figures/ \
+  <Host>:<Working Directory>/figures/ \
   ./experiment/figures/<server-name>/
 ```
+
+Add `sshpass -p '<Password>'` prefix to `-e "ssh ..."` if the server has a `Password` field.
 
 - Run after every job completes (training, evaluation, ablation, claim-proof, analysis).
 - Sub-directory per server (`<server-name>/`) prevents filename collisions across servers.
 - Update `Last Pull` timestamp in state.md after each pull.
-- **Local server exception**: If `Local?: yes` and the working directory is `./experiment/codebase/`, skip the pull — artifacts are already local. Figures may be in `./experiment/codebase/figures/`; move them to `./experiment/figures/` if needed.
+- **After pulling**: compute metrics (mean, std across seeds, aggregated tables) locally using the pulled JSON/CSV files. Never run metric aggregation scripts on the remote server.
+- **Local server exception**: If the server is local and the working directory is `./experiment/codebase/`, skip the pull — artifacts are already local. Figures may be in `./experiment/codebase/figures/`; move them to `./experiment/figures/` if needed.
 
 ---
 
