@@ -796,7 +796,7 @@ If incomplete → go back to the relevant phase.
 
 Write a comprehensive English report to **`./Report.md`** (project root, NOT `./experiment/`) following `references/report-template.md`. Required sections:
 
-1. **Method Design** — Overview, architecture (with Mermaid diagram), key components, training pipeline, implementation details
+1. **Method Design** — Must be written at top-venue paper level of detail. A reader must be able to **reimplement the method from scratch** using only this report. Include: problem formulation with notation, architecture (with Mermaid diagram), key components with **full mathematical formulations** (equations, variable definitions, tensor shapes), complete algorithm pseudocode (forward pass, training step, inference), all loss functions with equations and weighting, training pipeline with every hyperparameter, and implementation details in a comprehensive table. Every design choice must include its motivation.
 2. **Datasets** — Per-dataset: task, size, source, citation, preprocessing
 3. **Comparison Methods** — Per-baseline: venue, core idea, key difference, citation
 4. **Experimental Results** — Main comparison, ablation, claim verification, analysis (each with table + analysis)

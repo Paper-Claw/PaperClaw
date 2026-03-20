@@ -19,9 +19,16 @@
 
 ## Section 1: Method Design
 
+> **Writing standard**: This section must be written at the level of detail found in a top-venue
+> paper's methodology section. A reader should be able to **reimplement the method from scratch**
+> using only this report, without reading the source code. Every design choice must be accompanied
+> by its motivation. Omitting details or deferring to "see code" is not acceptable.
+
 ### 1.1 Overview
 
 High-level description matching the Proposal.md method section.
+- Problem formulation: formal definition of the task (input space, output space, objective)
+- Notation table: define all symbols used throughout Section 1
 
 ### 1.2 Architecture
 
@@ -42,18 +49,70 @@ graph LR
 
 For each key module/component:
 - **Component Name** (`<model_module>/<file>.py:<class_name>`)
-  - Purpose: what it does
-  - Input/Output: tensor shapes
-  - Key idea: core innovation
+  - **Purpose**: what it does and *why* it is needed (what problem it solves)
+  - **Mathematical formulation**: full equations with variable definitions
+    - e.g., $h_t = \sigma(W_h x_t + U_h h_{t-1} + b_h)$ where $W_h \in \mathbb{R}^{d \times d_x}$, ...
+  - **Input/Output**: tensor shapes with named dimensions (e.g., `[B, T, D]` where B=batch, T=seq_len, D=hidden_dim)
+  - **Core innovation**: what makes this different from standard approaches
+  - **Design rationale**: why this design over alternatives; what alternatives were considered and why they were rejected
+  - **Interaction with other components**: how this component connects to upstream/downstream modules
 
-### 1.4 Training Pipeline
+### 1.4 Algorithm Pseudocode
 
-Training procedure, loss functions, optimization details.
+Provide complete pseudocode for:
+1. **Forward pass** — step-by-step data flow from input to output
+2. **Training step** — including loss computation, gradient updates, any special mechanisms (gradient clipping, warmup, etc.)
+3. **Inference** — if different from forward pass (e.g., beam search, sampling, test-time augmentation)
 
-### 1.5 Implementation Details
+Use clear pseudocode format:
+```
+Algorithm 1: <Method Name> Training
+Input: training set D = {(x_i, y_i)}_{i=1}^N, learning rate η, ...
+Output: trained model parameters θ*
 
-Hyperparameters, augmentation, pre/post-processing.
-- Code reference: the project's unified training entry point (e.g., `train.py`)
+1: Initialize θ via <initialization strategy>
+2: for epoch = 1 to E do
+3:   for mini-batch B ⊂ D do
+4:     z = Encoder(x; θ_enc)          // Eq. (1)
+5:     ...
+6:     L = L_task + λ · L_reg         // Eq. (5)
+7:     θ ← θ - η · ∇_θ L
+8: return θ
+```
+
+### 1.5 Loss Functions
+
+For each loss term:
+- **Name and equation**: $\mathcal{L} = ...$
+- **Purpose**: what behavior this loss encourages/discourages
+- **Weighting**: how the coefficient is set (fixed, scheduled, tuned)
+- **Gradient behavior**: any notable properties (e.g., gradient magnitude, potential instabilities)
+
+Overall training objective: $\mathcal{L}_{total} = \sum_i \lambda_i \mathcal{L}_i$ with full specification of each $\lambda_i$.
+
+### 1.6 Training Pipeline
+
+- **Optimizer**: name, all hyperparameters (lr, betas, weight_decay, epsilon, ...)
+- **Learning rate schedule**: type, warmup steps, decay schedule, min lr
+- **Batch size**: effective batch size, gradient accumulation steps if any
+- **Epochs / steps**: total training duration, early stopping criteria if any
+- **Regularization**: dropout rates (per layer if different), weight decay, label smoothing, etc.
+- **Data augmentation**: every augmentation applied, with parameters
+- **Initialization**: weight initialization strategy for each module type
+- **Reproducibility**: random seeds, deterministic flags, known non-determinism sources
+
+### 1.7 Implementation Details
+
+- **All hyperparameters in one table**: parameter name, value, how it was chosen (tuned/default/from paper)
+
+| Hyperparameter | Value | Source |
+|---|---|---|
+| Hidden dimension | 768 | Following BERT-base |
+| ... | ... | ... |
+
+- **Pre/post-processing**: tokenization, normalization, feature extraction pipelines
+- **Numerical stability**: any tricks used (log-sum-exp, gradient clipping thresholds, mixed precision details)
+- **Code reference**: the project's unified training entry point (e.g., `train.py`)
 
 ---
 
