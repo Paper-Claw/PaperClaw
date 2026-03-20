@@ -128,8 +128,11 @@ When starting a new session, check if `./experiment/state.md` exists:
      3. **Abort** — save state and exit cleanly
    - Record the decision in log.md and proceed accordingly.
 6. **Sync todos** — read status.json and call TodoWrite to rebuild the `paperclaw-*` todo set (current phase, doing jobs, next jobs, blocker if any)
-7. **Resume** from the last incomplete step recorded in state.md
-7. **If Phase 2/3** → also read comparison.md / ours.md for iteration history
+7. **Check for stopped state** — if `Status: stopped` in state.md, output:
+   > "上次会话已停止，位于 Phase \<N\> Step \<X.Y\>。回复 "resume" 继续，或 "abort" 放弃当前实验状态。"
+   Then wait for the user's reply before proceeding. On `resume`: set `Status: running` in state.md and continue. On `abort`: delete state.md, status.json, and clear todos.
+8. **Resume** from the last incomplete step recorded in state.md
+9. **If Phase 2/3** → also read comparison.md / ours.md for iteration history
 
 If the user wants to restart a phase, they must explicitly say so.
 
@@ -393,6 +396,95 @@ Progress: <completed>/<total> experiments
 Current job: <description> (running <elapsed>)
 Avg time/job: ~<M>min  |  Est. remaining: ~<H>h <M>m
 ```
+
+---
+
+## Stop Command
+
+At any point during the session, the user can type `stop` or `stop: <reason>` to halt the skill. This is the only user-initiated interrupt that bypasses the normal autonomous loop.
+
+### Detection
+
+Check at the start of each main-loop iteration and after every user reply to `AskUserQuestion`. Match case-insensitively:
+- `stop` — halt with no reason recorded
+- `stop: <reason>` — halt and record the reason in log.md
+
+### Stop Protocol
+
+Execute all steps in order. SSH failures (server unreachable) are non-fatal — log and continue.
+
+#### Step S.1: Kill All Remote Jobs
+
+For each server in the `## Servers` table with `Status: connected`, run in parallel:
+
+```bash
+# Kill all paperclaw tmux sessions on a server
+ssh -p <Port> <Host> \
+  "tmux list-sessions 2>/dev/null | grep '^paperclaw-' | awk -F: '{print \$1}' \
+   | xargs -r -I{} tmux kill-session -t {}"
+```
+
+If SSH is unreachable for a server, log `kill failed: <server>` and continue.
+
+Record which sessions were killed (or failed) for the log entry.
+
+#### Step S.2: Update state.md
+
+Set in the header block:
+```
+- Status: stopped
+- Blocker: stopped by user
+- Last Action: User issued stop command at <ISO-timestamp>
+```
+
+Mark all entries in `## Active Jobs` with `Status: killed`.
+Mark all entries in `## Job Queue` with `Status: cancelled`.
+
+#### Step S.3: Write status.json
+
+Sync status.json as normal (`"status": "stopped"`, all active jobs `"killed"`, job queue `"cancelled"`).
+
+#### Step S.4: Append to log.md
+
+```markdown
+### <ISO-timestamp> | phase=<N> | type=decision | Skill stopped by user
+
+- Reason: <reason from "stop: <reason>", or "none">
+- Active jobs killed: <comma-separated session IDs, or "none">
+- Kill failures: <comma-separated server names where SSH unreachable, or "none">
+- Queued jobs cancelled: <count>
+```
+
+#### Step S.5: Update Todos
+
+Call TodoWrite to clear all `paperclaw-*` todos and write one:
+```
+STOPPED: Skill halted at Phase <N> Step <X.Y> — reply "resume" to continue or "abort" to discard state
+```
+
+#### Step S.6: Output Confirmation
+
+```
+已停止。
+- 已终止 tmux sessions: <list, or "无">
+- 终止失败 (SSH 不通): <list, or "无">
+- 已取消排队 jobs: <count>
+- 状态已保存: Phase <N>, Step <X.Y>
+
+如需继续，输入 "resume"。如需放弃当前实验状态，输入 "abort"。
+```
+
+#### Step S.7: Enter Dormant State
+
+Stop all autonomous looping. Do not dispatch any more executor or strategist subagents. Wait for explicit user instruction:
+- `resume` → run Resume Protocol from step 1
+- `abort` → confirm with user, then delete `./experiment/state.md`, `./experiment/status.json`, and clear all `paperclaw-*` todos
+- Any other instruction → respond normally as a regular assistant (the skill is dormant, not active)
+
+### Limitations
+
+- **Claude Code session cannot be terminated by the skill** — the session remains open; the skill simply stops its loop.
+- **Unreachable servers** — If SSH is down at stop time, those tmux jobs cannot be killed and will continue running until they finish or the server is rebooted. This is logged.
 
 ---
 
@@ -1436,6 +1528,7 @@ All hardware, scheduling, and status data is stored exclusively in `state.md`.
 18. **Pipeline prep eagerly** — While jobs run, set up venvs and download datasets on idle servers in parallel
 19. **Pull raw, compute local** — After every job, pull all raw output files (JSON, CSV, logs) to local machine; compute all metrics (mean, std, aggregation) locally from the pulled files; never run metric aggregation scripts on the remote server
 20. **server.md is user-only** — Never write to server.md; it is entirely user-owned; all skill-generated server data (hardware, status, scheduling) lives in state.md
+21. **Stop is graceful** — Respond to `stop` (or `stop: <reason>`) immediately: kill all `paperclaw-*` tmux sessions on all reachable servers, save stopped state, update todos, output confirmation, then enter dormant state. Do not dispatch any new executor or strategist subagents after receiving stop.
 
 ---
 
