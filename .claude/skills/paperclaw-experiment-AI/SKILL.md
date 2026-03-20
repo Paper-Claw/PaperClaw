@@ -873,6 +873,14 @@ Decision log format:
 
 All remote commands use the `Host`, `Port`, `User`, `Working Directory`, and `Activation` fields from the server's Connection block in server.md.
 
+**Sanitize all IDs before use in shell commands.** Method names, dataset names, and other strings from Proposal.md may contain spaces, parentheses, or special characters that break shell commands. Always sanitize first:
+
+```bash
+# Sanitize any string before using in tmux session names, rsync paths, or SSH commands
+# Example: "BERT-base (NeurIPS'23)" → "BERT-base-NeurIPS-23"
+safe_id=$(echo "${raw_name}" | tr -cs 'a-zA-Z0-9_-' '-' | sed 's/-\+/-/g' | sed 's/^-//;s/-$//')
+```
+
 ```bash
 # Simple command
 ssh -o ConnectTimeout=30 -p <Port> <User>@<Host> "cd '<Working Directory>' && <command>"
@@ -882,17 +890,18 @@ ssh -o ConnectTimeout=30 -p <Port> <User>@<Host> "cd '<Working Directory>' && <A
 
 # Long-running training (use tmux, NOT nohup)
 # For LOCAL servers: prefix with nice/taskset/ulimit (see Appendix F.1)
-ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<experiment_id> 'cd <workdir> && <Activation> && python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<experiment_id>-done'"
+# ALWAYS use sanitized safe_id, never raw method/dataset names
+ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<safe_id> 'cd <workdir> && <Activation> && python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<safe_id>-done'"
 
 # Check training status
-ssh <server> "tmux capture-pane -t paperclaw-<experiment_id> -p | tail -50"
+ssh <server> "tmux capture-pane -t paperclaw-<safe_id> -p | tail -50"
 ssh <server> "cd <workdir> && tail -50 train.log"
 
 # Check if a tmux session is running
-ssh <server> "tmux has-session -t paperclaw-<experiment_id> 2>/dev/null && echo 'RUNNING' || echo 'FINISHED'"
+ssh <server> "tmux has-session -t paperclaw-<safe_id> 2>/dev/null && echo 'RUNNING' || echo 'FINISHED'"
 
 # Kill a stuck session
-ssh <server> "tmux kill-session -t paperclaw-<experiment_id>"
+ssh <server> "tmux kill-session -t paperclaw-<safe_id>"
 
 # List all paperclaw sessions
 ssh <server> "tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'No active sessions'"
