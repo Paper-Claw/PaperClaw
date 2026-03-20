@@ -7,7 +7,7 @@ description: >-
   Runs an auto-pilot loop of server setup → experiment planning → baseline reproduction →
   our method implementation → report generation. All working state lives in ./experiment/.
   Produces Report.md, Report.html, Report_cn.md, and Report_cn.html as final deliverables.
-version: 1.2.0
+version: 1.3.0
 ---
 
 # PaperClaw Experiment AI — Full Experiment Execution Pipeline
@@ -111,15 +111,22 @@ When starting a new session, check if `./experiment/state.md` exists:
 
 1. **If exists** → Read state.md to determine current phase/step
 2. **Read log.md** for recent events and context
-3. **Check remote server** via SSH: reachable? Check for active tmux sessions (`tmux list-sessions 2>/dev/null | grep '^paperclaw-'`). If a training job is still running in a `paperclaw-*` session, resume monitoring it instead of restarting. Check latest checkpoint.
+3. **Detect server.md changes** — Re-read `./experiment/server.md` and compare to the Servers table in state.md:
+   - Any server whose `Status:` is `untested` or whose name is absent from the Servers table is **new**. Run Phase 0 Steps 0.2–0.5 for those servers only (skip Step 0.1 — the block already exists).
+   - Servers already in the Servers table (connected or disconnected) are handled by Step 4 below.
+   - This step also fires when the user explicitly says "I've updated server.md", "I added a server", etc.
+4. **Check all known servers** (Status was `connected` or `disconnected`) via SSH:
+   - Reachable? Check for active tmux sessions (`tmux list-sessions 2>/dev/null | grep '^paperclaw-'`). If a training job is still running in a `paperclaw-*` session, resume monitoring it instead of restarting. Check latest checkpoint.
+   - Update `Status:` in the Connection block and in the Servers table in state.md.
    - If SSH **unreachable**: do NOT escalate immediately. Retry once after 30 seconds.
-   - If still unreachable: ask user via `AskUserQuestion` with three options:
+   - If still unreachable: mark `disconnected` and continue with remaining connected servers.
+   - If **no** servers are reachable (including any newly probed from Step 3): ask user via `AskUserQuestion` with three options:
      1. **Wait** — user will restore server access; resume after confirmation
      2. **Local-only mode** — skip all remote operations; continue with local files (plan.md, results.md, report generation only)
      3. **Abort** — save state and exit cleanly
    - Record the decision in log.md and proceed accordingly.
-4. **Resume** from the last incomplete step recorded in state.md
-5. **If Phase 2/3** → also read comparison.md / ours.md for iteration history
+5. **Resume** from the last incomplete step recorded in state.md
+6. **If Phase 2/3** → also read comparison.md / ours.md for iteration history
 
 If the user wants to restart a phase, they must explicitly say so.
 
@@ -137,7 +144,13 @@ updated: <timestamp>
 - **Status**: [running / blocked / waiting-for-user / complete]
 - **Blocker**: <description or "none">
 - **Last Action**: <brief description>
-- **Server**: <connected / disconnected>
+
+## Servers
+
+| Name | Host | Status | GPUs | Free GPU Mem (at last check) | Free RAM (at last check) | Last Checked |
+|------|------|--------|------|------------------------------|--------------------------|--------------|
+| main | gpu1.example.com | connected | 4× A100 80G | 240G / 320G | 120G / 512G | <timestamp> |
+| gpu2 | gpu2.example.com | disconnected | — | — | — | <timestamp> |
 
 ## Progress Tracking
 
@@ -149,13 +162,10 @@ updated: <timestamp>
 
 ## Active Jobs
 
-| Session ID | Experiment | GPU(s) | Est. RAM | Started | Status |
-|------------|-----------|--------|----------|---------|--------|
-| paperclaw-train-baseline-X | Baseline X on Dataset A | 0 | 12G | <timestamp> | running |
-| paperclaw-train-baseline-Y | Baseline Y on Dataset B | 1 | 8G | <timestamp> | running |
-
-- **Max Concurrent GPU Jobs**: <N> (from server.md)
-- **Max Concurrent CPU Jobs**: <N> (from server.md)
+| Session ID | Server | Experiment | GPU(s) | Est. RAM | Started | Status |
+|------------|--------|-----------|--------|----------|---------|--------|
+| paperclaw-train-baseline-X | main | Baseline X on Dataset A | 0 | 12G | <timestamp> | running |
+| paperclaw-train-baseline-Y | gpu2 | Baseline Y on Dataset B | 1 | 8G | <timestamp> | running |
 ```
 
 **Update state.md** at: phase start, step start/end, blockers, user input requests, job start/finish, concurrent job launch/completion.
@@ -194,7 +204,7 @@ All internal files live under `./experiment/`:
 
 | File | Type | Purpose |
 |------|------|---------|
-| `server.md` | Overwrite | Server connection info, hardware specs |
+| `server.md` | Partial-overwrite | Multi-server config: user-editable Connection blocks + skill-written Hardware/Scheduling sections |
 | `plan.md` | Overwrite | Experiment plan (datasets, baselines, metrics, schedule) |
 | `comparison.md` | Append-only | Baseline reproduction log (iterations, errors, fixes) |
 | `ours.md` | Append-only | Our method implementation log (iterations, errors, fixes) |
@@ -254,66 +264,90 @@ Log events for: phase start/end, reproduction complete, iteration start/end, err
 
 ### Goal
 
-Establish a reliable connection to the experiment server and record its capabilities.
+Establish reliable connections to all configured experiment servers, probe their **live** hardware state, and record per-server scheduling capacity.
+
+> **Multi-server design**: Multiple servers can be configured in `server.md`. The user owns the `## Connection - Server <name>` blocks; the skill owns the `## Hardware - Server <name>`, `## Software Environment - Server <name>`, and `## Scheduling Capacity - Server <name>` blocks. Inside each Connection block, the skill auto-updates only the four designated skill-managed fields: `SSH shorthand`, `Note`, `Status`, and `Activation` (if missing). All other Connection content (Host, Port, User, Working Directory, TIP) is user-owned and never overwritten by the skill.
 
 ### Steps
 
-#### Step 0.1: Ask for Server Info
+#### Step 0.1: Read or Initialize Server Configuration
 
-Prompt the user with `AskUserQuestion`:
-1. SSH host (e.g., `user@hostname` or IP)
-2. SSH port (default 22)
-3. Working directory on the server (e.g., `/home/user/experiments`)
+1. Check if `./experiment/server.md` exists and contains `## Connection - Server` blocks.
+   - **If yes**: Parse all `## Connection - Server <name>` blocks. Extract `Host`, `Port`, `User`, `Working Directory`, `Activation` (default: `source <workdir>/.venv/bin/activate`), `Status`, and `TIP` for each server. Do NOT ask the user for credentials already present.
+   - **If no (or no Connection blocks found)**: Prompt the user with `AskUserQuestion`:
+     1. SSH host (e.g., `user@hostname` or IP)
+     2. SSH port (default 22)
+     3. SSH username
+     4. Working directory on the server (e.g., `/home/user/experiments`)
+     Then write the first `## Connection - Server main` block into `server.md` (see Appendix G for full format, including auto-filled `SSH shorthand`, `Note`, `Status`). Ask: "Would you like to add more servers? If so, please add `## Connection - Server <name>` blocks to `./experiment/server.md` following the format in Appendix G, then confirm." **Wait for the user to confirm, then re-read server.md and proceed to Step 0.2 with all parsed servers.**
 
-> **Sudo password**: Do NOT ask upfront. Most experiment workflows do not need sudo. If a command fails because sudo is required, ask the user for the password at that specific point only, then proceed. Never store sudo password in any file — session memory only. Redact credentials in all logs with `<REDACTED>`.
+> **Sudo password**: Do NOT ask upfront. Ask only when a specific command requires it. Never store in any file — session memory only. Redact in logs as `<REDACTED>`.
 
-#### Step 0.2: Test SSH Connection
+> **Adding servers later**: The user can add new `## Connection - Server <name>` blocks to `server.md` at any time and say "I've updated server.md" or "server info is updated." The skill will re-run Steps 0.2–0.5 for any server whose `status:` is `untested` or missing.
+
+#### Step 0.2: Test SSH Connections (All Servers)
+
+For each server parsed in Step 0.1:
 
 ```bash
 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new <user>@<host> -p <port> "echo 'Connection OK'"
 ```
 
-If connection fails: report error, ask for corrected credentials, retry (max 3 attempts).
+- **Success**: Update `- status: connected` in that server's Connection block.
+- **Failure**: Update `- status: disconnected`, log the error, and continue with remaining servers. Report all failures to the user at the end of Phase 0, but do NOT stop — proceed with connected servers.
 
-#### Step 0.3: Probe Hardware
+If **no** servers are reachable: ask user (wait / abort).
+
+#### Step 0.3: Probe Hardware (All Connected Servers)
+
+For each connected server, run a **live** hardware probe. This captures the actual free resources at probe time, which is important when the server is shared with other users:
 
 ```bash
-ssh <server> "nvidia-smi --query-gpu=index,name,memory.total,memory.used,driver_version --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
-  lscpu | grep -E 'Model name|^CPU\(s\)|Core|Thread'; nproc; free -h | head -2; free -m | grep Mem; df -h <workdir>; \
-  python3 --version 2>/dev/null; nvcc --version 2>/dev/null; head -4 /etc/os-release"
+ssh <server> "echo '=== GPU ==='; nvidia-smi --query-gpu=index,name,memory.total,memory.used,memory.free,utilization.gpu --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
+  echo '=== CPU ==='; lscpu | grep -E 'Model name|^CPU\(s\)|Core|Thread'; nproc; \
+  echo '=== RAM ==='; free -h | head -2; free -m | grep Mem; \
+  echo '=== DISK ==='; df -h <workdir>; \
+  echo '=== LOAD ==='; uptime; \
+  echo '=== USERS ==='; who | wc -l; \
+  echo '=== SOFTWARE ==='; python3 --version 2>/dev/null; nvcc --version 2>/dev/null; head -4 /etc/os-release"
 ```
 
-Record in server.md the **resource capacity** for scheduling (see Appendix F):
-- Number of GPUs and per-GPU memory (MiB)
-- Total CPU cores (physical) and threads
-- Total RAM (MiB)
-- Available disk space
+> **Shared server awareness**: The probe captures `memory.free` (not just total), current RAM usage, and logged-in user count. Record these as the **baseline free resources** at probe time. All scheduling decisions use **live** resource checks (Appendix F), not static capacity — because other users may be running jobs at any time.
 
-#### Step 0.4: Check Working Directory
+#### Step 0.4: Check Working Directories (All Connected Servers)
 
 ```bash
 ssh <server> "test -d <workdir> && test -w <workdir> && echo 'OK' || echo 'FAIL'; ls -A <workdir> | head -5"
 ```
 
-If not empty, ask the user: proceed (preserve existing files) or choose a different directory?
+If a workdir is not empty, ask the user: proceed (preserve existing files) or choose a different directory?
 
-#### Step 0.5: Write server.md
+#### Step 0.5: Update Connection Block Fields + Write Hardware/Capacity Sections
 
-Write `./experiment/server.md` with sections:
-- **Connection**: host, port, user, workdir
-- **Hardware**: GPU table (index, name, memory each), CPU (cores, threads), total RAM, storage
-- **Software Environment**: OS, Python, CUDA, driver version
-- **Scheduling Capacity** (see Appendix F): per-GPU total memory, max concurrent CPU jobs, RAM thresholds, measured job memory footprints
+For each connected server, update the following fields **inside** the `## Connection - Server <name>` block:
+- `SSH shorthand`: set to `ssh -p <Port> <User>@<Host>`
+- `Note`: set to `<N>× <GPU name> | <OS> | Python <version> | CUDA <version> | <K> users active at last probe` (preserve any `<!--user-note-->` suffix if present)
+- `Status`: set to `connected` or `disconnected`
+- `Activation`: if missing, set the default: `source <Working Directory>/.venv/bin/activate`
+
+Then write/overwrite the `## Hardware - Server <name>`, `## Software Environment - Server <name>`, and `## Scheduling Capacity - Server <name>` sections. Do NOT modify any other user-written content in the Connection block.
+
+Per-server scheduling capacity (see Appendix F and G):
+- Number of GPUs, per-GPU total memory (MiB), and **free memory at probe time**
+- Total CPU cores/threads; current load average
+- Total RAM (MiB); RAM in use at probe time
+- Available disk space
+- Logged-in user count at probe time (for shared-server awareness)
 
 #### Step 0.6: Probe Local Hardware
 
-Detect local machine specs (`system_profiler` on macOS) and append a "Local Machine" section to `server.md`.
+Detect local machine specs (`system_profiler` on macOS, `/proc/cpuinfo` on Linux) and write/overwrite a `## Local Machine` section in `server.md`.
 
 ### Completion Criteria
 
-- [x] SSH connection confirmed
-- [x] Hardware specs recorded in server.md
-- [x] Working directory is writable
+- [x] All servers in server.md tested; `status:` updated for each
+- [x] Hardware + Scheduling Capacity written for each connected server
+- [x] At least one server connected and working directory is writable
 
 ---
 
@@ -409,10 +443,21 @@ The executor supplements the strategist's experiment matrix (already in plan.md 
 
 #### Step 1.6: Initialize Unified Project & Git Repository
 
-On the remote server:
+**Primary server**: Initialize the unified project on the first connected server listed in server.md (the "primary server"). All servers share the same codebase — use `rsync` to sync code to secondary servers before running jobs on them (see sync rule below).
+
+On the primary server:
 1. Create the unified Python project scaffold following the **Unified Project Principles** above: `pyproject.toml` (or `setup.py`), a model registry/factory, shared data loading, shared training loop, shared evaluation, and unified entry points (`train.py`, `eval.py`). The concrete directory layout is decided by the strategist based on the project domain and any existing codebase conventions.
 2. Write an initial `README.md` documenting the project structure, installation, and basic usage.
 3. `git init`, create `.gitignore` (exclude `__pycache__/`, `.venv/`, `data/`, `*.pt`, `*.pth`, `wandb/`, `.env`, credentials, etc.), initial commit.
+
+**Multi-server code sync rule**: Before launching any job on a secondary server, sync the project code from the primary server:
+```bash
+rsync -az --exclude='.venv' --exclude='data' --exclude='*.pt' --exclude='*.pth' --exclude='wandb' \
+  -e "ssh -p <primary-port>" \
+  <primary-user>@<primary-host>:<primary-workdir>/ \
+  -e "ssh -p <secondary-port>" <secondary-user>@<secondary-host>:<secondary-workdir>/
+```
+Each secondary server has its own `.venv` (created in Phase 2 Step 2.0) and `data/` directory (downloaded independently). Only code and configs are synced. Sync before each new job launch on a secondary server; no need to sync mid-run.
 
 #### Step 1.7: Create results.md
 
@@ -740,19 +785,19 @@ Decision log format:
 
 ### B. SSH Command Patterns
 
-All remote commands follow these patterns:
+All remote commands use the `Host`, `Port`, `User`, `Working Directory`, and `Activation` fields from the server's Connection block in server.md. Construct SSH commands as:
 
 ```bash
-# Simple command
-ssh -o ConnectTimeout=30 <user>@<host> -p <port> "cd <workdir> && <command>"
+# Simple command  (use SSH shorthand from server.md for brevity)
+ssh -o ConnectTimeout=30 -p <Port> <User>@<Host> "cd '<Working Directory>' && <command>"
 
-# With venv
-ssh -o ConnectTimeout=30 <user>@<host> -p <port> "cd <workdir> && source .venv/bin/activate && <command>"
+# With venv  (use the Activation field, not a hardcoded path)
+ssh -o ConnectTimeout=30 -p <Port> <User>@<Host> "cd '<Working Directory>' && <Activation> && <command>"
 
 # Long-running training (use tmux, NOT nohup)
 # Session naming: paperclaw-<experiment_id> (e.g., paperclaw-train-baseline-pomo, paperclaw-ablation-01)
 # The command auto-closes the tmux session when the program finishes.
-ssh <server> "tmux new-session -d -s paperclaw-<experiment_id> 'cd <workdir> && source .venv/bin/activate && python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<experiment_id>-done'"
+ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<experiment_id> 'cd <workdir> && <Activation> && python train.py --config <config> 2>&1 | tee train.log; tmux wait-for -S paperclaw-<experiment_id>-done'"
 
 # Check training status (attach or read log)
 ssh <server> "tmux capture-pane -t paperclaw-<experiment_id> -p | tail -50"
@@ -841,105 +886,236 @@ Timeout handling: use `tmux` for all long-running jobs (training, evaluation, da
 
 ### F. Resource-Aware Parallel Scheduling
 
-The experiment server has finite resources. Blindly launching all jobs at once can cause OOM kills, CPU saturation, or the machine becoming unresponsive. This appendix defines how to safely parallelize experiments.
+Experiment servers often have finite resources and may be **shared with other users**. Blindly launching all jobs at once can cause OOM kills, CPU saturation, or the machine becoming unresponsive — even if capacity looked sufficient at the start of the session. All scheduling decisions MUST use **live resource checks**, not static capacity estimates.
 
-#### F.1: Scheduling Capacity (determined in Phase 0)
+> **Shared-server rule**: Never assume the server is idle. Always measure free resources immediately before launching a job. Other users' processes may appear or disappear at any time.
 
-After hardware probing, compute and record in server.md:
+#### F.1: Scheduling Capacity (determined in Phase 0, stored in server.md)
+
+After hardware probing, compute and record per-server in server.md:
 
 ```markdown
-## Scheduling Capacity
+## Scheduling Capacity - Server <name>
 
-- **GPUs**: <N> × <name> (<M> MiB each)
+- **GPUs**: <N> × <name> (<M> MiB total each)
 - **Max Concurrent CPU-Only Jobs**: <floor(total_threads / 4)> (cap at 4)
-- **RAM Headroom**: reserve 15% of total RAM for OS + SSH + monitoring
+- **RAM Headroom**: reserve 20% of total RAM for OS + SSH + monitoring + other users
 
-### Thresholds (do NOT launch new jobs if exceeded)
-- RAM usage > 85% of total
-- GPU: free memory on target GPU < estimated peak memory of the new job
-- CPU usage > 90% sustained (1-min avg)
+### Thresholds (do NOT launch new jobs if exceeded — check LIVE before each launch)
+- RAM usage > 80% of total  *(tighter than single-user: other users may allocate RAM at any time)*
+- GPU: live free memory on target GPU < estimated peak memory of the new job
+- CPU usage > 85% sustained (1-min avg)
 - Disk usage > 90%
 ```
 
 **Capacity rules:**
-- **Same GPU, multiple jobs**: Allowed as long as the GPU has enough **free memory** to fit the new job. No fixed headroom — use all available memory, just don't exceed total. Example: a 24 GiB GPU running a 10 GiB job has ~14 GiB free; a second job needing 8 GiB can launch on the same GPU.
-- **Multi-GPU (N GPUs)**: Prefer spreading jobs across GPUs first. Only stack on the same GPU when all GPUs are partially occupied and free memory permits.
-- **CPU-only jobs**: can run alongside GPU jobs as long as RAM and CPU thresholds are respected.
-- **Estimating GPU memory**: If a job's GPU memory footprint is unknown, run it once solo and record peak usage via `nvidia-smi`. Use that measurement for subsequent scheduling. Before the first measurement, assume **70% of one GPU's total memory** as a conservative estimate.
+- **Same GPU, multiple jobs**: Allowed only when live `memory.free` (from `nvidia-smi`) ≥ the new job's estimated peak. Do NOT rely on `memory.total - memory.used` from the probe done at session start — re-check live.
+- **Multi-GPU**: Prefer spreading jobs across GPUs first. Only stack on the same GPU when all GPUs are partially occupied and live free memory permits.
+- **CPU-only jobs**: Can run alongside GPU jobs as long as live RAM and CPU thresholds are respected.
+- **Multi-server**: When multiple servers are connected, treat each server's resources independently. Assign jobs to the server with the most available resources for the job type (GPU jobs → server with most free GPU memory; CPU jobs → server with lowest CPU load).
+- **Estimating GPU memory**: Run the job once solo and record peak usage via `nvidia-smi`. Use that measurement for subsequent scheduling. Before the first measurement, assume **70% of one GPU's total memory** as a conservative estimate (lower than single-user to account for other users' processes).
 
-#### F.2: Resource Check Commands
+#### F.2: Live Resource Check Commands
 
-Run these **before launching any new job**:
+Run these **immediately before launching any new job** (not at session start — live state matters):
 
 ```bash
-# Combined resource snapshot (single SSH call)
-ssh <server> "echo '=== GPU ==='; nvidia-smi --query-gpu=index,memory.used,memory.total,utilization.gpu --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
+# Per-server live snapshot (single SSH call per server)
+ssh <server> "echo '=== GPU ==='; nvidia-smi --query-gpu=index,memory.used,memory.free,memory.total,utilization.gpu --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
   echo '=== RAM ==='; free -m | grep Mem; \
   echo '=== CPU ==='; top -bn1 | grep 'Cpu(s)' | awk '{print \"CPU used: \" 100-\$8 \"%\"}'; \
   echo '=== DISK ==='; df -h <workdir> | tail -1; \
-  echo '=== ACTIVE JOBS ==='; tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'None'"
+  echo '=== OTHER USERS ==='; who | wc -l; \
+  echo '=== OUR JOBS ==='; tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'None'"
 ```
 
-Parse the output and compare against thresholds. If **any** threshold is exceeded, **do not launch** — wait for a running job to finish, then re-check.
+Parse `memory.free` (NOT `memory.total - memory.used`) for GPU scheduling — `memory.free` is the live available memory accounting for all processes, including other users. If **any** threshold is exceeded on all servers, **do not launch** — wait for a running job to finish, then re-check (poll every 60 seconds).
 
-#### F.3: Launch Protocol
+#### F.3: Multi-Server Launch Protocol
 
 Before starting a new experiment:
 
-1. **Check active jobs**: `tmux list-sessions | grep '^paperclaw-'` — count running jobs.
-2. **Check resources**: Run F.2 resource snapshot.
-3. **Evaluate**:
-   - **GPU job**: Check each GPU's free memory (`memory.total - memory.used`). If any GPU has free memory ≥ the new job's estimated peak GPU memory → OK to launch on that GPU (prefer the GPU with the most free memory).
-   - **CPU-only job**: If RAM < 85% AND CPU < 90% → OK to launch.
-   - Otherwise → **wait**. Poll every 60 seconds until a slot opens (a running job finishes and frees resources).
-4. **Pin GPU**: For GPU jobs, always set `CUDA_VISIBLE_DEVICES=<gpu_index>` in the tmux command:
+1. **Check active jobs** across all connected servers: `tmux list-sessions | grep '^paperclaw-'` on each.
+2. **Run live resource check** (F.2) on ALL connected servers in one round.
+3. **Select best server** for the job:
+   - **GPU job**: Scan all servers. For each server, find the GPU with the highest `memory.free`. Pick the server+GPU combination with the most free memory that still meets the job's estimated peak. If multiple options are equivalent, prefer the server with fewer active paperclaw jobs.
+   - **CPU job**: Pick the server with lowest CPU% and most free RAM.
+   - If a server's TIP (from server.md Connection block) mentions constraints (e.g., "slow network — avoid large downloads"), honor that hint when selecting.
+4. **Evaluate thresholds on chosen server**: free GPU memory ≥ job estimate AND RAM < 80% AND CPU < 85%. If not → try next best server. If none qualify → wait and re-poll.
+5. **Pin GPU**: For GPU jobs, always set `CUDA_VISIBLE_DEVICES=<gpu_index>`. Use the `Activation` field from the chosen server's Connection block (not a hardcoded path):
    ```bash
-   ssh <server> "tmux new-session -d -s paperclaw-<id> 'cd <workdir> && source .venv/bin/activate && CUDA_VISIBLE_DEVICES=<gpu_index> python train.py --config <config> 2>&1 | tee <logfile>; tmux wait-for -S paperclaw-<id>-done'"
+   ssh -p <Port> <User>@<Host> "tmux new-session -d -s paperclaw-<id> 'cd <Working Directory> && <Activation> && CUDA_VISIBLE_DEVICES=<gpu_index> python train.py --config <config> 2>&1 | tee <logfile>; tmux wait-for -S paperclaw-<id>-done'"
    ```
-5. **Update state.md**: Add the new job to the Active Jobs table.
-6. **Log**: Record the launch in log.md with the resource snapshot at launch time.
+6. **Update state.md**: Add the new job to the Active Jobs table with server name.
+7. **Log**: Record launch in log.md with server name and live resource snapshot at launch time.
 
-#### F.4: Monitoring Active Jobs
+#### F.4: Monitoring Active Jobs (Multi-Server)
 
-When multiple jobs are running concurrently:
+When multiple jobs are running across servers:
 
 ```bash
-# Check which sessions are still alive
-ssh <server> "tmux list-sessions 2>/dev/null | grep '^paperclaw-'"
+# Check all paperclaw sessions on each connected server
+ssh <server-A> "tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'None'"
+ssh <server-B> "tmux list-sessions 2>/dev/null | grep '^paperclaw-' || echo 'None'"
 
 # Check a specific job's latest output
 ssh <server> "tmux capture-pane -t paperclaw-<id> -p | tail -20"
 
-# Quick health check: are resources still within thresholds?
-ssh <server> "free -m | grep Mem; nvidia-smi --query-gpu=index,memory.used,memory.total --format=csv,noheader 2>/dev/null"
+# Quick health check per server (catches other users' impact on resources)
+ssh <server> "free -m | grep Mem; nvidia-smi --query-gpu=index,memory.free,memory.total,utilization.gpu --format=csv,noheader 2>/dev/null; uptime"
 ```
 
 When a job finishes:
 1. Remove it from the Active Jobs table in state.md.
-2. Check resources again (F.2).
-3. Launch next queued experiment if resources permit.
+2. Run live resource checks on all servers (F.2).
+3. Launch next queued experiment on the best available server.
 
 #### F.5: What Can Run in Parallel
 
 | Scenario | Parallel? | Notes |
 |----------|-----------|-------|
-| Different baselines on different GPUs | Yes | Pin each to its own GPU |
-| Different baselines on same GPU | Yes, if memory fits | Sum of peak GPU memory of all jobs on that GPU must < GPU total memory |
-| Different seeds of same method on different GPUs | Yes | Pin each to its own GPU |
-| Different seeds on same GPU | Yes, if memory fits | Same rule: sum of peak memory < total |
-| Ablation variants on same/different GPUs | Yes, if memory fits | Prefer spreading across GPUs first |
-| CPU evaluation while GPU is training | Yes | As long as RAM permits |
-| Dataset download while GPU is training | Yes | I/O bound, minimal CPU/RAM |
-| Two training jobs on a single-GPU machine | Yes, if memory fits | Check free memory ≥ new job's peak; if not, wait |
-| Our method iteration while a baseline is still running | Yes, if memory fits | OK on same GPU if free memory sufficient; prefer different GPU |
+| Different baselines on different servers | Yes | Check live resources on each server before launch |
+| Different baselines on different GPUs (same server) | Yes | Pin each to its own GPU; check live free memory |
+| Different baselines on same GPU | Yes, if live `memory.free` fits | Check live free memory ≥ sum of peaks |
+| Different seeds on different servers | Yes | Best use of multi-server setup |
+| Different seeds on different GPUs (same server) | Yes | Pin each; check live free memory |
+| Ablation variants across servers or GPUs | Yes | Spread across servers first, then GPUs |
+| CPU evaluation while GPU is training | Yes | Check live RAM on the same server |
+| Dataset download while GPU is training | Yes | I/O-bound; check disk and bandwidth |
+| Two training jobs on a single-GPU server | Yes, if live `memory.free` fits | Re-check immediately before second launch |
+| Our method while baseline still running | Yes, if resources fit | Prefer different server or GPU; always check live |
 
 #### F.6: Adaptive Capacity Adjustment
 
-If a job triggers an OOM kill or the machine becomes unresponsive:
-1. After recovery, reduce `Max Concurrent GPU Jobs` by 1 in server.md.
-2. Log the incident in log.md with the resource state at the time.
-3. For subsequent jobs, also reduce batch size or enable gradient checkpointing.
-4. If max concurrent drops to 0 (i.e., even a single job OOMs), this is a single-job OOM issue — handle per Appendix D (reduce batch size, mixed precision, etc.).
+If a job triggers an OOM kill or the machine becomes unresponsive (can happen more often on shared servers):
+1. After recovery, reduce the RAM threshold by 5% for that server in server.md (e.g., 80% → 75%) and log the incident.
+2. Log the incident in log.md with the resource state at the time (include `who` output to note if other users were active).
+3. For subsequent jobs on that server: reduce batch size or enable gradient checkpointing.
+4. If a single job OOMs even alone → handle per Appendix D.
+5. If a server repeatedly causes OOM incidents, update its `Note` field in server.md with a warning (e.g., `Note: ... | ⚠️ OOM-prone — reduce batch size`) so future sessions are aware. Do NOT write to TIP (that is user-owned).
+
+### G. Server Configuration Format (server.md)
+
+`./experiment/server.md` is the single source of truth for all server configurations. It has two kinds of content:
+
+- **User-owned blocks** (`## Connection - Server <name>`): The user writes and edits these. Inside each block, four fields are **skill-managed** (auto-updated on every probe): `SSH shorthand`, `Note`, `Status`, `Activation` (only if missing). All other Connection content (Host, Port, User, Working Directory, TIP) is never touched by the skill.
+- **Skill-owned blocks** (`## Hardware`, `## Software Environment`, `## Scheduling Capacity` per server, and `## Local Machine`): The skill writes and overwrites these entirely on every probe. Users should not edit these.
+
+#### Connection Block Fields
+
+Each `## Connection - Server <name>` block contains these fields:
+
+| Field | Written by | Description |
+|-------|-----------|-------------|
+| `Host` | User | Hostname or IP address |
+| `Port` | User | SSH port (default: 22) |
+| `User` | User | SSH username |
+| `Working Directory` | User | Remote working directory for experiments |
+| `Activation` | User (optional) | venv activation command. Default: `source <workdir>/.venv/bin/activate`. Override if venv is elsewhere. |
+| `SSH shorthand` | **Skill** (auto-written) | Full SSH command for convenience, e.g. `ssh -p 22 user@host`. Users may edit. |
+| `Note` | **Skill** (auto-written) | One-line summary of server status and key hardware, updated each time the skill probes the server. Users may edit; the skill will overwrite on next probe unless the user adds a `<!--user-note-->` marker. |
+| `Status` | **Skill** (auto-written) | `connected` / `disconnected` / `untested`. Updated by the skill on every connection check. |
+| `TIP` | **User** (optional) | A `> TIP:` blockquote. Free-form hints for the scheduling logic: GPU availability patterns, constraints, best use cases, known issues. The skill reads but never overwrites this. |
+
+#### Full server.md Format
+
+```markdown
+# Experiment Server Configuration
+
+<!--
+  ADD A SERVER: Copy a `## Connection - Server <name>` block, fill in Host/Port/User/Working Directory,
+  and leave SSH shorthand, Note, and Status blank — the skill will fill them in.
+  REMOVE A SERVER: Delete the full block (Connection + Hardware + Software + Scheduling).
+
+  TIP: Add a `> TIP:` blockquote for hints the scheduler should know about this server.
+-->
+
+## Connection - Server main
+- Host: gpu1.example.com
+- Port: 22
+- User: alice
+- Working Directory: /home/alice/paperclaw-experiments
+- Activation: source /home/alice/paperclaw-experiments/.venv/bin/activate
+- SSH shorthand: ssh -p 22 alice@gpu1.example.com
+- Note: 8× A100 80G | Ubuntu 22.04 | Python 3.10 | CUDA 12.1 | 3 users active at last probe
+- Status: connected
+
+> TIP: Shared with the lab — GPU 6 and 7 are often busy during business hours. Best for large-model runs.
+
+## Hardware - Server main
+<!-- Written by the skill — do not edit -->
+| GPU | Name | Total (MiB) | Free at probe (MiB) |
+|-----|------|-------------|----------------------|
+| 0   | A100 80GB SXM4 | 81920 | 71200 |
+...
+
+- CPU: 128 cores / 256 threads (AMD EPYC 7763)
+- Total RAM: 512 GiB  |  In use at probe: 82 GiB
+- Disk (<workdir>): 20 TiB total, 14 TiB free
+- Active users at probe: 3
+
+## Software Environment - Server main
+<!-- Written by the skill — do not edit -->
+- OS: Ubuntu 22.04.3 LTS
+- Python: 3.10.12
+- CUDA: 12.1 / Driver: 530.30.02
+
+## Scheduling Capacity - Server main
+<!-- Written by the skill — do not edit -->
+- GPUs: 8 × A100 80G (81920 MiB each)
+- Max Concurrent CPU-Only Jobs: 4
+- RAM Headroom: reserve 20% (≈102 GiB) for OS + other users
+
+### Thresholds (live — re-checked before every job launch)
+- RAM usage > 80% of total
+- GPU: live `memory.free` < estimated peak of new job
+- CPU usage > 85% (1-min avg)
+- Disk usage > 90%
+
+### Measured Job Memory Footprints
+| Method | Dataset | GPU Peak (MiB) | RAM Peak (GiB) |
+|--------|---------|----------------|----------------|
+| Baseline-A | DatasetX | 18400 | 12 |
+
+---
+
+## Connection - Server gpu2
+- Host: 192.168.1.42
+- Port: 2222
+- User: bob
+- Working Directory: /data/bob/experiments
+- Activation: source /data/bob/experiments/.venv/bin/activate
+- SSH shorthand: ssh -p 2222 bob@192.168.1.42
+- Note: (not yet probed)
+- Status: untested
+
+> TIP: Personal server — usually idle. Slow SSD; avoid large dataset downloads here.
+
+## Hardware - Server gpu2
+<!-- not yet probed — will be filled after connection test -->
+
+---
+
+## Local Machine
+<!-- Written by the skill — do not edit -->
+- CPU: Apple M2 Pro, 12 cores
+- RAM: 32 GiB
+- OS: macOS 14.3
+```
+
+#### Rules for Adding/Removing Servers
+
+**To add a server**: Append a new `## Connection - Server <name>` block with `Host`, `Port`, `User`, `Working Directory` filled in. Leave `SSH shorthand`, `Note`, `Status` blank or set `Status: untested`. Tell the skill "I've updated server.md" and the skill will probe the new server, fill in those fields, and write the Hardware/Scheduling sections.
+
+**To remove a server**: Delete its entire set of blocks (Connection + Hardware + Software Environment + Scheduling Capacity). The skill will stop using it.
+
+**`Note` field**: Auto-written by the skill each time it probes the server. Contains a compact summary (hardware, OS, users). If you want to add a permanent note that the skill won't overwrite, append `<!--user-note-->` after your text: the skill will preserve everything before that marker.
+
+**`TIP` field**: The `> TIP:` blockquote is read by the scheduling logic (F.3) when selecting the best server for a job. Use it to document:
+- GPU availability patterns (e.g., "GPU 2-3 busy during business hours")
+- Hardware constraints (e.g., "only 500 GB disk — avoid large datasets")
+- Best use cases (e.g., "best for CPU-heavy preprocessing")
+- Known issues (e.g., "intermittent SSH drops — always use tmux")
 
 ---
 
@@ -958,7 +1134,9 @@ If a job triggers an OOM kill or the machine becomes unresponsive:
 11. **Never store secrets** — Sudo password in session memory only
 12. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
 13. **Download results locally** — Keep `experiment/figures/` synced for reports
-14. **Respect machine limits** — Always check resources before launching jobs; never saturate the server (see Appendix F)
+14. **Respect machine limits** — Always check **live** resources before launching jobs; never saturate the server (see Appendix F)
+15. **Treat servers as shared** — Other users may consume resources at any time; always re-check free memory/CPU/RAM immediately before each job launch, not just at session start
+16. **Spread across servers** — When multiple servers are connected, distribute jobs across them; consult each server's TIP for scheduling hints
 
 ---
 
