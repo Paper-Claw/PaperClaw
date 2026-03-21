@@ -75,44 +75,58 @@ If **any** RAM/CPU/disk threshold is exceeded on all servers, do not launch — 
 
 **Trigger**: run at session start and after every job completes. Goal: fill ALL available GPU capacity before stopping.
 
+**Assignment Rule**: Jobs enter the queue with `server: null, gpu: null` (unassigned). Server/GPU binding happens ONLY inside this saturation loop at dispatch time. The main session MUST NEVER pre-assign a job to a specific server or GPU when adding it to the queue. This ensures maximum flexibility — if server A is busy, the job automatically goes to server B.
+
 ```
 LOOP:
   0. Re-read ./experiment/server.md and compare to active server list:
      - Any server whose Connection block was REMOVED: immediately stop scheduling jobs to it;
        remove it from GPU Slots and Servers table in state.md; log "server <name> removed by user"
-     - Any server whose Connection block was ADDED (Status: untested or absent): run Phase 0
-       Steps 0.2–0.5 for it before continuing the loop
+     - Any server whose Connection block was ADDED (Status: untested or absent): dispatch
+       executor("setup") for it before continuing the loop
 
   1. Run live resource check (F.2) on ALL connected servers simultaneously
      → Update GPU Slots table in state.md (VRAM Free, Util%, Last Checked)
 
-  2. For each server that passes RAM/CPU/disk thresholds (F.1):
-       a. Collect all queued jobs for this server (by priority order)
-       b. For each GPU on this server (index 0, 1, 2, ...):
-            - If GPU has no running jobs:
-                → Assign next queued job; no memory check needed; mark GPU slot busy
-            - If GPU already has running jobs (co-location candidate):
-                → Check: memory.free > job's Est. VRAM × 1.1  AND  utilization.gpu < 70%
-                → If both pass: assign job to this GPU; mark slot busy
-                → If either fails: skip this GPU; try next GPU or next server
-       c. After all GPU assignments for this server are decided:
-            - Push codebase to this server ONCE (not per job)
-            - Launch all assigned jobs in parallel, each with CUDA_VISIBLE_DEVICES=<gpu_index>
-            - Update GPU Slots, Job Queue, Active Jobs in state.md
-            - Log all launches in log.md with resource snapshot
+  2. ASSIGN: match unassigned jobs to available GPUs across ALL servers
+     a. Collect all unassigned queued jobs (server=null), sorted by priority (F.6)
+     b. Build available GPU list: all GPUs across all servers that pass RAM/CPU/disk thresholds (F.1)
+        Sort by: server free_slots DESC, server load ASC (prefer least-loaded server first)
+     c. For each unassigned job (highest priority first):
+          - Find the best available GPU from the sorted list:
+            · Idle GPU (no running jobs): assign immediately, no memory pre-check
+            · Occupied GPU (co-location): check memory.free > Est. VRAM × 1.1 AND util < 70%
+              If both pass: assign. If either fails: try next GPU.
+          - If a GPU is found:
+            · Set job.server = <server>, job.gpu = <gpu_index> in state.md
+            · Remove this GPU from available list (or reduce its capacity for co-location)
+          - If no GPU available for this job: skip (will retry next loop pass)
 
-  3. Continue until queue is empty OR no GPU on any server can accept another job
+  3. LAUNCH: dispatch all newly-assigned jobs
+     Group assigned jobs by server → for each server with new assignments:
+       a. Check code_dirty for this server; skip if dirty and job modifies code
+       b. Push codebase to this server ONCE (not per job) — via executor
+       c. Launch all assigned jobs in parallel, each with CUDA_VISIBLE_DEVICES=<gpu_index>
+       d. Update GPU Slots, Job Queue, Active Jobs in state.md
+       e. Log all launches in log.md with resource snapshot
 
-  4. If no capacity anywhere: poll every 60s; re-run loop when any job finishes
+  4. Continue until queue has no unassigned jobs OR no GPU on any server can accept another job
+
+  5. If no capacity anywhere: poll every 60s; re-run loop when any job finishes
 ```
 
 **Key rules:**
 - Never stop after filling one slot — fill ALL available capacity in one pass
 - One push per server per loop pass, not one push per job
+- Jobs are NEVER pre-assigned to servers — the loop picks the best server dynamically each time
 - CPU-only jobs (`Est. VRAM = 0`): assign `CUDA_VISIBLE_DEVICES=""`, skip GPU slot tracking entirely
 - After each job completes: query `nvidia-smi` for that GPU, update GPU Slots, record `Actual VRAM` in Active Jobs
 
-**Server selection**: prefer the server with the most free GPU slots and lowest RAM/CPU load. Honor TIP hints when choosing between equivalent options. For local servers: verify conservative thresholds (F.1) before assigning any job.
+**Server selection heuristic** (used in step 2b to sort available GPUs):
+1. Prefer server with most free GPU slots (spread load)
+2. Break ties by lowest RAM/CPU load
+3. Honor TIP hints when choosing between equivalent options
+4. For local servers: verify conservative thresholds (F.1) before assigning any job
 
 ## F.4: Monitoring Active Jobs (Multi-Server)
 

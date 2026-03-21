@@ -119,6 +119,7 @@ The main session (this skill) is the **central dispatcher**. It drives a Phase s
 | `setup` | Phase 0 server probe | Yes |
 | `research` | Phase 1 literature survey | Yes |
 | `scaffold` | Phase 1 project structure | Yes |
+| `env-setup` | Phase 2 venv + deps + datasets (per server) | Yes |
 | `integrate-baseline` | Phase 2 adapt baseline code | Yes |
 | `launch` | Start any training/eval job | **Yes — fire and forget** |
 | `check` | Poll running job status | Yes |
@@ -127,6 +128,27 @@ The main session (this skill) is the **central dispatcher**. It drives a Phase s
 | `completeness-check` | Phase 4 verification | Yes |
 | `format` | HTML conversion / Chinese translation | Yes |
 | `git-commit` | Commit milestone | Yes |
+
+### Main Session Boundaries (Anti-Patterns)
+
+The main session is a **dispatcher**, not an executor. It MUST NEVER:
+
+- **Execute SSH commands directly** — All remote operations (probe, install, launch, check, debug) go through executor. If you find yourself writing `ssh` in a Bash command, stop and dispatch an executor instead.
+- **Run rsync/scp directly** — Executor tasks handle push/pull as part of their workflow (env-setup pushes codebase, check pulls artifacts, launch pushes before starting).
+- **Create or manage tmux sessions directly** — Executor's `launch`, `reproduce`, and `check` tasks handle tmux lifecycle.
+- **Debug remote environment issues directly** — Dispatch `executor("debug")` or `executor("env-setup")` instead of manually SSH-ing to investigate.
+- **Run pip install, conda, or any package management** — This is `executor("env-setup")`'s job.
+
+**Self-check**: If the main session's next action involves `Bash(ssh ...)`, `Bash(rsync ...)`, or `Bash(sshpass ...)`, it is doing executor work. The correct action is to formulate an executor prompt describing the task and dispatch it via `Agent(subagent_type="paperclaw-experiment-executor")`.
+
+**What the main session DOES do**:
+- Read/write state.md, plan.md, results.md, log.md (local files)
+- Git commit locally (`git add`, `git commit`)
+- Create local directories (`mkdir -p ./experiment/...`)
+- Dispatch executors and strategists via Agent()
+- Parse executor return values and update state
+- Sync Tasks for user visibility
+- Make scheduling decisions (which job goes to which GPU)
 
 ---
 
@@ -146,7 +168,7 @@ loop:
       - completed jobs → update results, release GPU, dequeue next job
       - failed jobs → add to debug queue (or trigger strategist if iter ≥ 3)
       - still running → no action
-    update state.md → sync Tasks → output progress to user
+    update state.md → write status.json → sync Tasks → output progress to user
 
   # 3. Handle debug queue
   if debug_queue is not empty:
@@ -158,20 +180,27 @@ loop:
         invoke strategist (Task C or Task E)
         invoke executor("debug", strategist fix plan)
         invoke executor("launch", rerun)
-    update state.md → sync Tasks
+    update state.md → write status.json → sync Tasks
 
-  # 4. Fill idle GPUs (saturation)
-  if job_queue has pending jobs AND idle GPUs available:
-    for each (job, gpu) assignment:
-      check code_dirty for target server
-      if not code_dirty or job is read-only:
-        invoke executor("launch", job, server, gpu)
-    update state.md → sync Tasks
+  # 4. Fill idle GPUs (saturation) — see F.3 for full algorithm
+  #    Jobs sit in queue with server=null, gpu=null (unassigned).
+  #    Assignment happens HERE at dispatch time, not when jobs enter the queue.
+  if job_queue has unassigned jobs AND idle GPUs available on any server:
+    run saturation loop (F.3):
+      collect unassigned jobs sorted by priority
+      build available GPU list across ALL servers (sorted: most free slots, lowest load)
+      for each unassigned job (highest priority first):
+        find best available GPU across all servers
+        assign job.server + job.gpu dynamically
+        check code_dirty for assigned server
+        if not code_dirty or job is read-only:
+          invoke executor("launch", job, assigned_server, assigned_gpu)
+    update state.md → write status.json → sync Tasks
 
   # 5. Check phase completion
   if current phase is complete (all jobs done, no failures):
     execute phase-transition logic (see per-phase recipes below)
-    update state.md → sync Tasks → output milestone to user
+    update state.md → write status.json → sync Tasks → output milestone to user
     if all phases done: break
 
   # 6. Wait if all GPUs busy and nothing else to do
@@ -198,15 +227,23 @@ update state.md with hardware/GPU slots
 invoke executor("research", "baselines and datasets")
 invoke strategist(Task A, "design experiment matrix")
 invoke executor("scaffold", plan.md)
-invoke executor("launch" or "reproduce" per server, push codebase to all servers)
 → Phase 2
 ```
 
-**Phase 2 (parallel baselines):**
+**Phase 2 (parallel setup + baselines):**
 ```
+# Steps 2.0-2.1: parallel env-setup on all servers
+for each server:
+  dispatch executor("env-setup", {server, deps, datasets})     ← parallel
+# Step 2.2: integrate baselines (can overlap with env-setup)
 for each baseline:
-  add to job_queue: {type: reproduce/launch, baseline, server, gpu}
-enter main loop → jobs are dispatched via saturation, checked, debugged
+  dispatch executor("integrate-baseline", baseline)             ← parallel where safe
+# ⚠️ HARD BARRIER: wait for ALL env-setup AND ALL integrate-baseline to return
+#    before proceeding. Do NOT dispatch any launch/reproduce until this barrier passes.
+# Step 2.3: add baseline jobs to job_queue
+for each baseline:
+  add to job_queue: {type: reproduce/launch, baseline, server: null, gpu: null}
+enter main loop → saturation loop (F.3) dynamically assigns server/GPU, then dispatches
 when all baselines reproduced → Phase 3
 ```
 
@@ -239,11 +276,13 @@ invoke executor("git-commit", "final")
 
 | Task Type | Modifies Codebase? | Can Run in Parallel? |
 |-----------|-------------------|---------------------|
+| `setup` | No (returns data) | ✅ Unlimited parallel across servers |
+| `env-setup` | No (remote only) | ✅ Unlimited parallel across servers |
 | `launch` (stable code) | No | ✅ Unlimited parallel on different GPUs |
 | `check` | No | ✅ Always parallel |
 | `reproduce` (stable code) | No | ✅ Unlimited parallel on different GPUs |
 | `debug` | **Yes** | ⚠️ See code_dirty rules below |
-| `integrate-baseline` | **Yes** | ⚠️ Sequential on same server |
+| `integrate-baseline` | **Yes** | ⚠️ Sequential if touching shared files |
 | `scaffold` | **Yes** | N/A (runs once) |
 
 ### code_dirty Flag
@@ -453,7 +492,7 @@ When starting a new session, check if `./experiment/state.md` exists:
 3. **Check codebase exists** — If state.md shows phase ≥ 1, verify `./experiment/codebase/` exists. If missing, ask the user before proceeding.
 4. **Early Tasks sync** — Immediately create/update Tasks from state.md's existing data (Current Phase, Current Step, job_queue, completed experiments) so the user sees current progress before slow SSH checks begin. This is a preliminary snapshot — it will be refined in step 8 after live server status is known.
 5. **Sync server.md → state.md** — Re-read `./experiment/server.md` and compare all `## Connection <name>` blocks to the Servers table in state.md:
-   - Any server whose name is absent from the Servers table is **new** → add a row with `Status: untested`. Run Phase 0 Steps 0.2–0.5 for those servers only. Then, if phase ≥ 1: push codebase and create `.venv`.
+   - Any server whose name is absent from the Servers table is **new** → add a row with `Status: untested`. Dispatch `executor("setup")` for those servers only. Then, if phase ≥ 2: dispatch `executor("env-setup")` to push codebase, create venv, and install deps.
    - Any server in the Servers table but absent from server.md → removed by user. Remove from all state.md tables; cancel queued jobs for it.
    - This step also fires when the user explicitly says "I've updated server.md", etc.
 6. **Check all known servers** via SSH:
@@ -533,7 +572,7 @@ Check at the start of each main-loop iteration and after every user reply to `As
 
 ### Stop Protocol
 
-Execute all steps in order. SSH failures (server unreachable) are non-fatal — log and continue.
+Execute all steps in order. SSH failures (server unreachable) are non-fatal — log and continue. **This is the only place the main session runs SSH directly** — killing active sessions is an emergency action that should not be delegated.
 
 #### Step S.1: Kill All Remote Jobs
 
@@ -669,62 +708,33 @@ Establish reliable connections to all configured experiment servers, probe their
 
 > **Adding servers later**: The user can add new `## Connection <name>` blocks to `server.md` at any time and say "I've updated server.md" or "server info is updated." The skill will re-run Steps 0.2–0.5 for any server absent from the Servers table in state.md.
 
-#### Step 0.2: Test SSH Connections & Detect Local Servers (All Servers)
+#### Steps 0.2–0.5: Probe All Servers (Parallel Executor Dispatch)
 
-For each server parsed in Step 0.1:
+For each server parsed in Step 0.1, dispatch **in parallel**:
 
-**Local server detection**: Before SSH-testing, check if the server is the local machine. A server is local if the hostname part of `Host` (everything after `@`) is `localhost`, `127.0.0.1`, or matches the output of `hostname -f` / `hostname`. If local:
-- Resolve `Working Directory` to an absolute path: `realpath <workdir>`. If the user provided a relative path, resolve it and use the absolute path in all subsequent commands.
-- Mark `Local?: yes` in state.md Servers table.
-- SSH test still runs normally (`ssh localhost` works and is used for all commands for consistency).
-
-```bash
-# Without password (key-based auth):
-ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p <Port> <Host> "echo 'Connection OK'"
-
-# With password field set:
-sshpass -p '<Password>' ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new -p <Port> <Host> "echo 'Connection OK'"
+```
+executor("setup", {
+  server: <name>,
+  host: <user@hostname>,
+  port: <port>,
+  workdir: <working directory>,
+  password: <if set>
+})
 ```
 
-- **Success**: Update the `Status` field to `connected` in state.md Servers table.
-- **Failure**: Update `Status` to `disconnected` in state.md, log the error, and continue with remaining servers. Report all failures to the user at the end of Phase 0, but do NOT stop — proceed with connected servers.
+Each executor handles: SSH connection test, local server detection, live hardware probe (GPU/CPU/RAM/disk/load/users/software), and working directory check. See the executor's `setup` task type for full details.
+
+> **Parallel dispatch**: All `executor("setup")` calls are independent — dispatch them in a single message with multiple Agent() calls.
+
+**Process returned results** for each server:
+
+- **Success**: Write the `### Hardware - <name>`, `### Software Environment - <name>`, and `### Scheduling Capacity - <name>` subsections under `## Server Details` in state.md. Update `Status` to `connected` and `Local?` field in the Servers table. Record baseline free resources at probe time.
+- **Workdir non-empty**: If the executor reports the working directory is non-empty, ask the user: proceed (preserve existing files) or choose a different directory?
+- **Failed**: Update `Status` to `disconnected` in state.md, log the error, and continue with remaining servers.
 
 If **no** servers are reachable: ask user (wait / abort).
 
-#### Step 0.3: Probe Hardware (All Connected Servers)
-
-For each connected server, run a **live** hardware probe. This captures the actual free resources at probe time, which is important when the server is shared with other users:
-
-```bash
-ssh <server> "echo '=== GPU ==='; nvidia-smi --query-gpu=index,name,memory.total,memory.used,memory.free,utilization.gpu --format=csv,noheader 2>/dev/null || echo 'No GPU'; \
-  echo '=== CPU ==='; lscpu | grep -E 'Model name|^CPU\(s\)|Core|Thread'; nproc; \
-  echo '=== RAM ==='; free -h | head -2; free -m | grep Mem; \
-  echo '=== DISK ==='; df -h <workdir>; \
-  echo '=== LOAD ==='; uptime; \
-  echo '=== USERS ==='; who | wc -l; \
-  echo '=== SOFTWARE ==='; python3 --version 2>/dev/null; nvcc --version 2>/dev/null; head -4 /etc/os-release"
-```
-
-> **Shared server awareness**: The probe captures `memory.free` (not just total), current RAM usage, and logged-in user count. Record these as the **baseline free resources** at probe time. All scheduling decisions use **live** resource checks (Appendix F), not static capacity — because other users may be running jobs at any time.
-
-#### Step 0.4: Check Working Directories (All Connected Servers)
-
-```bash
-ssh <server> "test -d <workdir> && test -w <workdir> && echo 'OK' || echo 'FAIL'; ls -A <workdir> | head -5"
-```
-
-If a workdir is not empty, ask the user: proceed (preserve existing files) or choose a different directory?
-
-#### Step 0.5: Write Hardware/Capacity Sections to state.md
-
-For each connected server, write/overwrite the `### Hardware - <name>`, `### Software Environment - <name>`, and `### Scheduling Capacity - <name>` subsections under `## Server Details` in state.md. Do NOT modify server.md — it is entirely user-owned.
-
-Per-server scheduling capacity (see Appendix F and G):
-- Number of GPUs, per-GPU total memory (MiB), and **free memory at probe time**
-- Total CPU cores/threads; current load average
-- Total RAM (MiB); RAM in use at probe time
-- Available disk space
-- Logged-in user count at probe time (for shared-server awareness)
+> **Shared server awareness**: The probe captures `memory.free` (not just total), current RAM usage, and logged-in user count. All scheduling decisions use **live** resource checks (Appendix F), not static capacity — because other users may be running jobs at any time.
 
 #### Step 0.6: Probe Local Hardware & Initialize Local Directories
 
@@ -877,18 +887,9 @@ git add experiment/codebase/
 git commit -m "chore: initialize experiment codebase scaffold"
 ```
 
-**c) Push to all connected servers** (see Appendix H push command) — run in parallel for all connected servers:
-```bash
-rsync -az \
-  --exclude='data/' --exclude='checkpoints/' --exclude='results/' \
-  --exclude='figures/' --exclude='outputs/' --exclude='wandb/' --exclude='.env' \
-  --exclude='.venv/' --exclude='__pycache__/' --exclude='*.pyc' --exclude='.git/' \
-  -e "ssh -p <port>" \
-  ./experiment/codebase/ \
-  <user>@<host>:<workdir>/
-```
+**c) Initial push to servers**: The codebase push is handled automatically by the first executor dispatch to each server. In Phase 2, `executor("env-setup")` pushes the codebase as its first step. For subsequent phases, `executor("launch")` and `executor("reproduce")` also push before starting. The main session does NOT run rsync directly.
 
-> **Push rule**: Push is always **local → remote**. The initial push at Step 1.6c is an intentional exception — all servers need the scaffold before any job can be assigned. For all subsequent pushes (Phases 2–3), push only to the server receiving the next job. Never mass-push to all servers when fixing a bug for one. Never edit code directly on the remote; all edits happen locally in `./experiment/codebase/` using Write/Edit tools.
+> **Push rule**: Push is always **local → remote**, handled by executor tasks. Each executor pushes only to its target server. Never edit code directly on the remote; all edits happen locally in `./experiment/codebase/` using Write/Edit tools.
 
 #### Step 1.7: Create results.md
 
@@ -908,7 +909,7 @@ Git commit locally: `docs(experiment): generate experiment plan`
 
 - [x] plan.md contains baselines, datasets, experiment matrix, claim-proof table
 - [x] results.md initialized with all table headers
-- [x] Codebase pushed to all connected servers
+- [x] Codebase scaffold committed locally (push deferred to Phase 2 env-setup executors)
 - [x] All [Added] methods/datasets flagged for user review
 
 ---
@@ -921,28 +922,46 @@ Reproduce all baseline methods and verify results match reported numbers (within
 
 ### Steps
 
-#### Step 2.0: Create Virtual Environment
+#### Steps 2.0–2.1: Environment Setup & Dataset Download (Parallel Executor Dispatch)
 
-```bash
-ssh <server> "cd <workdir> && python3 -m venv .venv"
+For each connected server, dispatch **in parallel**:
+
+```
+executor("env-setup", {
+  server: <name>,
+  host, port, workdir, password,
+  codebase: "./experiment/codebase/",
+  deps: <from pyproject.toml or explicit list>,
+  datasets: <from plan.md — name, download URL, expected size for each>
+})
 ```
 
-**Critical**: ALL subsequent Python commands MUST activate the venv first:
-```bash
-ssh <server> "cd <workdir> && source .venv/bin/activate && <command>"
+Each executor handles: push codebase to server, create venv, install dependencies, download and verify all datasets. See the executor's `env-setup` task type for full details.
+
+> **Parallel dispatch**: All `executor("env-setup")` calls are independent per server — dispatch them in a single message with multiple Agent() calls.
+
+**Process returned results**:
+- Log installed package versions and dataset sizes to log.md
+- If any server returned `partial` or `failed`: retry the failed steps once (dispatch another `executor("env-setup")` for that server with only the failed items), then escalate to user if still failing
+
+**Overlap with baseline integration**: While remote env-setup runs, the main session can concurrently dispatch local `executor("integrate-baseline")` tasks (Step 2.2) since those only modify local code and don't depend on remote environments.
+
+> **HARD BARRIER**: The main session MUST wait for ALL `env-setup` executors AND ALL `integrate-baseline` executors to return successfully before proceeding to Step 2.3 (adding baseline jobs to job_queue). This prevents: (a) launch executors pushing code before env-setup finishes, (b) jobs starting before datasets are downloaded, (c) jobs running stale code if integrate-baseline hasn't completed.
+
+Git commit after datasets are confirmed ready on all servers.
+
+#### Step 2.2: Setup Baseline Code (Parallel Executor Dispatch)
+
+For each baseline, dispatch:
+
+```
+executor("integrate-baseline", {baseline, repo_url, paper_ref, model_interface})
 ```
 
-Install common dependencies (torch, numpy, scipy, scikit-learn, pandas, matplotlib, tqdm, wandb, etc.).
-
-#### Step 2.1: Download Datasets
-
-For each dataset in plan.md: create `data/<dataset>/`, download, verify integrity. Git commit after datasets are ready.
-
-#### Step 2.2: Setup Baseline Code
-
-For each baseline:
 - **Option A**: Clone official repo as reference → extract and adapt model code into the unified project's model module, conforming to the common model interface. Write a config file for the baseline. If following an existing codebase, respect its conventions.
 - **Option B**: Implement from paper if no code available, as a model class in the unified project conforming to the common interface.
+
+> **Parallel safety**: Multiple `integrate-baseline` executors can run in parallel if they modify different model files. If two baselines would modify shared infrastructure, run them sequentially.
 
 Git commit after each baseline code setup.
 
@@ -1249,6 +1268,8 @@ Decision log format (same `### title` pattern as log.md, `type=decision`):
 ```
 
 ### B. SSH & Rsync Command Patterns
+
+> **Audience**: These patterns are for **executor agents only**. The main session does NOT run SSH/rsync commands directly (see Main Session Boundaries). The only exception is the Stop Protocol (Step S.1), which kills tmux sessions as an emergency path.
 
 All remote commands use the `Host` (format: `user@hostname`), `Port`, `Working Directory`, `Activation`, and `Password` (if present) fields from the server's `## Connection <name>` block in server.md.
 
