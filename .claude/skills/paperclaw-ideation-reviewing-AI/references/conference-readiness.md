@@ -1,6 +1,6 @@
 # Conference Readiness Criteria
 
-Evaluation rubric for assessing whether a research idea is ready for top-venue submission.
+Evaluation rubric for assessing whether a research proposal has the potential to reach top-venue publication quality.
 
 **Target venues:** See `references/domain.md` for the full venue list.
 
@@ -75,18 +75,19 @@ Is the method well-defined and are the claims defensible?
 
 | Score | Meaning |
 |-------|---------|
-| 5 | Method is fully specified; theoretical guarantees or strong empirical justification; ablations designed |
-| 4 | Method is clearly described; key design choices are justified; experimental plan is solid |
-| 3 | Core method is clear; some design choices need justification; experiments cover main claims |
-| 2 | Method sketch exists but key components are vague; experiments may not support the claims |
+| 5 | Core method is well-specified: key steps can be described in pseudocode; major design choices are theoretically or intuitively justified; experimental plan covers all key claims; theoretical claims are precisely stated with sound NL proofs |
+| 4 | Core method is clearly described; key design choices have clear rationale; experimental plan covers main claims; theoretical claims are clearly stated |
+| 3 | Core method is clear at a conceptual level; some design choices need more elaboration; main experiments are identifiable |
+| 2 | Method direction is indicated but key components are underspecified; it is unclear how main claims would be tested |
 | 1 | Method is undefined or implausible |
 
 **Soundness checklist:**
-- [ ] The core algorithm/procedure can be described in pseudocode
-- [ ] Every major design choice has a reason (theoretical or empirical)
+- [ ] The core algorithm/procedure can be described in pseudocode or step-by-step
+- [ ] Every major design choice has a reason (theoretical or intuitive)
 - [ ] The proposed method directly addresses the stated limitation of prior work
-- [ ] There is at least one experiment that isolates the proposed contribution (ablation)
-- [ ] Failure cases or negative results are acknowledged
+- [ ] At least one "killer experiment" is identified that would confirm or falsify the core claim
+- [ ] Theoretical claims are stated precisely enough to be independently checkable
+- [ ] Failure cases or limitations are acknowledged
 
 **Common soundness issues at ideation stage:**
 - Method relies on a component that does not exist yet
@@ -94,11 +95,11 @@ Is the method well-defined and are the claims defensible?
 - Comparison against weak or unfair baselines
 - No way to measure the property that was claimed to improve
 
-**Lean 4 Formal Verification Penalty:**
+**Lean 4 Formal Verification — Proposal-Stage Expectations:**
 
-Lean 4 verification is expected for all theoretical claims. Having it does **not** add bonus points; missing or incomplete verification incurs a penalty.
+At the proposal stage, the primary requirement is that theoretical claims are stated precisely and NL proofs are logically sound — soundness is enforced by the math auditor's veto. Lean 4 formalization is encouraged as evidence that claims are formalizable and helps catch subtle errors early, but full compilation is not required at this stage.
 
-The authoritative Lean 4 adjustment rules (including the full status/condition/adjustment table, justified-skip criteria, and escalation caps) are defined in `references/review-protocol.md` "Soundness Score Adjustment" section. Refer to that table when scoring Technical Soundness — do not use any other source.
+The authoritative Lean 4 adjustment rules (including the full status/condition/adjustment table and escalation caps) are defined in `references/review-protocol.md` "Soundness Score Adjustment" section. Refer to that table when scoring Technical Soundness — do not use any other source.
 
 ---
 

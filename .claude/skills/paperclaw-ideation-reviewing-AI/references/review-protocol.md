@@ -40,15 +40,15 @@ The orchestrator independently audits Lean 4 verification status. This is separa
 
 ### Soundness Score Adjustment
 
-Lean 4 verification is **expected** for all theoretical work — having it does not add bonus points. Missing or incomplete verification incurs a penalty. The "justified skip" exception requires **both** a compelling, explicit justification for not formalizing AND a careful natural-language proof audit that confirms soundness; apply this exception conservatively.
+At the proposal stage, **NL proof soundness is the primary gate** — enforced by the math auditor's veto. Lean 4 formalization is encouraged as evidence that claims are formalizable and helps catch subtle errors, but full compilation is not required. Penalties apply when theoretical claims are present but NL proofs are vague or absent, or when Lean code misrepresents the claimed result.
 
 | Status | Condition | Adjustment |
 |--------|-----------|------------|
-| **FULL PASS** | `lake build` succeeds, no `sorry` | No change (verification is expected, not a bonus) |
-| **PARTIAL PASS** | `sorry` on any sub-goals (empirical or otherwise) | -1 to mean Soundness (floor at 1) |
-| **FAIL** | Verification attempted, failed after retries | -1 to mean Soundness (floor at 1) |
-| **SKIPPED (justified + rigorous NL proof)** | No formalizable claims exist OR skip is explicitly justified AND NL proof is carefully audited and sound | No change — apply conservatively; default to -1 if in doubt |
-| **SKIPPED (unjustified or NL proof insufficient)** | Formalizable claims exist but no verification; or justification is weak; or NL proof has gaps | -1 to mean Soundness (floor at 1) |
+| **FULL PASS** | `lake build` succeeds, no `sorry` | No change |
+| **PARTIAL PASS (non-core sorry)** | `sorry` only on sub-goals that are NOT the core theoretical contribution (e.g., empirical bounds, library gaps, simplification steps) | No change |
+| **PARTIAL PASS (core sorry)** | `sorry` on the theorem that constitutes the proposal's primary theoretical claim | -1 to mean Soundness (floor at 1) |
+| **FAIL / NOT ATTEMPTED — NL proofs sound** | Lean verification failed or not attempted; NL proofs are clear and sound (validated by math auditor) | No change — Lean compilation not required at proposal stage |
+| **FAIL / NOT ATTEMPTED — NL proofs vague or missing** | Lean verification failed or not attempted; AND NL proofs are vague, incomplete, or absent | -1 to mean Soundness (floor at 1) |
 | **ESCALATION** | Ideation pipeline flagged `Lean4Escalation: true` | Cap mean Soundness at 2 |
 | **FORMAL MISMATCH** | Lean code compiles but theorem statement is materially weaker than the NL claim (significantly stronger hypotheses, special-case proof presented as general, definitions inconsistent with theory.md) | -1 to mean Soundness (floor at 1; cumulative with other penalties) |
 

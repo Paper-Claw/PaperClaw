@@ -327,23 +327,45 @@ The main session updates Tasks after **every** Agent() return to provide real-ti
 - Entering wait-for-job state
 - Blocker encountered (user input needed)
 
-### Task Content Structure
+### Task List Structure
+
+Use individual TaskCreate entries — one per experiment job or significant action. This is what the user sees in the UI. Do NOT use a single "paperclaw-experiment" task with multi-line content; that content field is not displayed by default.
+
+#### When to Create Tasks
+
+- At the start of each phase: create one task per planned experiment/job
+- For non-experiment actions (e.g., "Update results.md", "Monitor seeds on Server B"): create a task when the action is scheduled
+
+#### Task Naming Format
+
+Append an ETA suffix to the task name for all non-completed tasks:
+
+| Task status | Name format |
+|-------------|-------------|
+| `pending` (queued) | `<description> (~Xh est.)` |
+| `in_progress` (running) | `<description> (~Xh left)` |
+| `completed` | `<description>` — no suffix |
+| `completed` (failed) | `<description> [FAILED]` — no suffix |
+
+Use `(~? est.)` when runtime cannot be estimated. Omit ETA suffix only for completed and failed tasks.
+
+#### When to Update Tasks
+
+After every executor/strategist return:
+- Job launched → set status `in_progress`, update name with `(~Xh left)`
+- Job still running → update `(~Xh left)` suffix based on latest progress
+- Job finished → set status `completed`, remove ETA suffix
+- Job failed → set status `completed`, append `[FAILED]` to name
+- New job queued → create new task with `pending` status and `(~Xh est.)` suffix
+
+#### Example
 
 ```
-Subject: paperclaw-experiment
-Content format:
-  Line 1: Current Phase + overall progress
-  Lines 2+: One line per active/pending/completed job
-  Last line: Next action or blocker
-
-Example:
-  "Phase 2: Baseline Reproduction (3/5 done)
-   ✅ BERT-base: F1=85.1 (target 85.2) ✓
-   ✅ ResNet-50: Acc=76.2 ✓
-   ✅ DenseNet: Acc=75.8 ✓
-   🔄 ViT-L: training on server-B GPU 0 (epoch 45/100, ~2h left)
-   ⏳ EfficientNet: queued, waiting for GPU
-   Next: checking running jobs in 30min"
+✔ Reproduce BERT-base on MNIST Addition
+✔ Reproduce ResNet-50 on CIFAR-10
+🔄 Reproduce Scallop on MNIST Addition (~2h left)
+◼ Monitor A-NeSI seeds 3+4 on Server B (~3h est.)
+◼ Update results.md and state.md with all new results
 ```
 
 ### User-Facing Output (Completion Reports)
