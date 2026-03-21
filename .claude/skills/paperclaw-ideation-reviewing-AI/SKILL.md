@@ -43,9 +43,9 @@ flowchart TD
     TRIGGER["state.md = review-pending"] --> S1["Step 1: Detect Reviewers\nQuery CLI tools & models"]
     S1 --> S2["Step 2: Assign Personas\n5 reviewer roles + Math Auditor"]
     S2 --> S3["Step 3: Dispatch in Parallel\nR1-R5: 5min timeout, fallback chain"]
-    S3 --> S35["Step 3.5: Math Auditor\npaperclaw-math-auditor (opus)\nNL proof correctness only"]
-    S35 --> VETO{"Math Audit\nVerdict?"}
-    VETO -->|"VETO"| FAILV["Skip aggregation → FAIL path\nFatal Issues → metareview"]
+    S3 --> S35["Step 3.5: Dual Math Audit\nClaude opus + GPT via codex in parallel\nNL proof correctness only"]
+    S35 --> VETO{"Combined\nVerdict?"}
+    VETO -->|"Either VETO"| FAILV["Skip aggregation → FAIL path\nFatal Issues → metareview"]
     VETO -->|"PASS"| S4["Step 4: Aggregate Scores\nMean per dimension (drop highest if N≥5) + Lean 4 audit"]
     S4 --> S5["Step 5: Synthesize Feedback\nStrip scores → qualitative themes"]
     S5 --> S6{"Step 6: Gate Decision"}
@@ -71,7 +71,9 @@ All review artifacts live under `./ideation/reviews/iteration-N/`:
 | File | Type | Purpose |
 |------|------|---------|
 | `RX-[family].md` | Per-reviewer | Individual review (scores + commentary) |
-| `aggregation.md` | Per-iteration | Score aggregation, Lean 4 audit, split decisions (orchestrator only) |
+| `math-audit-claude.md` | Per-iteration | Math correctness audit by Claude opus (orchestrator only) |
+| `math-audit-gpt.md` | Per-iteration | Math correctness audit by GPT via codex (orchestrator only) |
+| `aggregation.md` | Per-iteration | Score aggregation, Lean 4 audit, split decisions, combined math audit verdict (orchestrator only) |
 | `metareview.md` | Per-iteration | Qualitative feedback (no scores) — ideation reads this |
 | `feedback.md` | Per-iteration | What changes ideation made in response (written by ideation after revision) |
 
@@ -150,6 +152,8 @@ Maximize review diversity by assigning each reviewer a unique evaluation perspec
 | R3 (Gemini) | Methodical novelty assessor | Novelty, related work positioning, contribution clarity |
 | R4 (DeepSeek) | Devil's advocate | Edge cases, failure modes, unsupported assumptions |
 | R5 (Kimi) | Breadth reviewer | Cross-disciplinary connections, broader impact |
+| Math Auditor Claude | Mathematical correctness specialist (Claude opus) — NL proof correctness only, co-veto power |
+| Math Auditor GPT | Mathematical correctness specialist (GPT via codex) — NL proof correctness only, co-veto power |
 
 ---
 
@@ -246,49 +250,102 @@ Save each review to `./ideation/reviews/iteration-N/RX-[family].md`.
 
 ---
 
-## Step 3.5: Math Expert Audit
+## Step 3.5: Dual Math Expert Audit
 
 ### Goal
 
-Run an independent mathematical correctness review of the NL proofs in Proposal.md, in parallel with the regular reviewer panel. This step runs concurrently with Step 3 — dispatch both at the same time.
+Run two independent mathematical correctness reviews of the NL proofs in Proposal.md — one from Claude (opus) and one from GPT (via codex) — in parallel with the regular reviewer panel. Both auditors operate independently with no access to each other's output. This step runs concurrently with Step 3 — dispatch all at the same time.
 
 ### Steps
 
-#### 3.5.1: Dispatch Math Auditor
+#### 3.5.1: Dispatch Both Math Auditors
 
-Launch via Agent tool simultaneously with R1-R5 (use `run_in_background: true`):
+Launch **both** auditors simultaneously with R1-R5 (all with `run_in_background: true`):
 
+**Claude Auditor** — via Agent tool:
 ```
 Agent(
   subagent_type="paperclaw-math-auditor",
-  prompt="Read ./Proposal.md Section 4. Evaluate mathematical correctness of all theorems and NL proofs. Write your audit to ./ideation/reviews/iteration-N/math-audit.md following the output format in your instructions."
+  run_in_background=true,
+  prompt="Read ./Proposal.md Section 4. Evaluate mathematical correctness of all theorems and NL proofs. Write your audit to ./ideation/reviews/iteration-N/math-audit-claude.md following the output format in your instructions."
 )
 ```
 
-**Timeout:** 5 minutes. If the agent fails or times out, log the failure and proceed without math audit (treat as PASS with a warning note in aggregation.md).
+**GPT Auditor** — via codex CLI (use the model from `~/.codex/config.toml`):
+```bash
+timeout 300 codex exec \
+  -c 'sandbox_permissions=["disk-full-read-access","disk-write-access"]' \
+  "You are an independent mathematical expert. Read ONLY ./Proposal.md Section 4 (Theoretical Analysis). Evaluate mathematical correctness of all theorems and natural-language proofs.
 
-#### 3.5.2: Await Result
+For each theorem/lemma, assess: (1) Is the statement well-formed and non-trivial? (2) Is each proof step logically justified with no invalid steps? (3) Does the proof establish the stated conclusion (not a weaker version)?
 
-After all reviewers (R1-R5 and math auditor) have completed or timed out, read `./ideation/reviews/iteration-N/math-audit.md`.
+Issue VETO if ANY of the following: a theorem is mathematically false under its stated assumptions; a proof step is logically invalid (not just informal); the proof proves a materially different claim than stated; a critical assumption was silently used but not declared AND this makes the result significantly weaker.
+Issue PASS if all theorems are sound, even if proofs are informal or sketched. Reserve VETO for clear mathematical errors only. When in doubt: PASS with concerns.
 
-#### 3.5.3: Apply Veto Gate
+Write your audit to ./ideation/reviews/iteration-N/math-audit-gpt.md in this exact format:
+# Math Audit — Iteration N
+## Verdict: PASS / VETO
+[One paragraph summary]
+## Theorem-by-Theorem Analysis
+### Theorem X: [Name]
+**Statement assessment:** [well-formed and non-trivial / trivial / ill-formed / false]
+**Proof assessment:** [sound / has gap / incorrect]
+- Step [X]: [finding]
+**Overall verdict for this theorem:** PASS / CONCERN / FATAL
+## Summary
+### Fatal Issues (cause VETO)
+- [precise description, which theorem, which step]
+### Non-fatal Concerns
+- [minor gaps or imprecisions]
+## Revision Guidance (if VETO)
+[Specific actionable guidance]"
+```
 
-1. Check the `## Verdict` line in `math-audit.md`
-2. **If `Verdict: VETO`:**
+**Timeouts:** 5 minutes each. If an auditor fails or times out, log the failure (do not block on it).
+
+#### 3.5.2: Await Results
+
+After all reviewers and both math auditors have completed or timed out:
+- Read `./ideation/reviews/iteration-N/math-audit-claude.md` (if exists)
+- Read `./ideation/reviews/iteration-N/math-audit-gpt.md` (if exists)
+
+#### 3.5.3: Combine Verdicts
+
+Apply the following combination logic:
+
+| Claude | GPT | Combined Verdict |
+|--------|-----|-----------------|
+| VETO | VETO | **VETO** — both agree |
+| VETO | PASS | **VETO** — Claude flagged errors (log GPT disagreement as note) |
+| PASS | VETO | **VETO** — GPT flagged errors (log Claude disagreement as note) |
+| PASS | PASS | **PASS** |
+| VETO | missing | **VETO** — Claude result used, warn GPT unavailable |
+| PASS | missing | **PASS** — warn GPT unavailable in aggregation.md |
+| missing | VETO | **VETO** — GPT result used, warn Claude auditor failed |
+| missing | PASS | **PASS** — warn Claude auditor failed in aggregation.md |
+| missing | missing | **PASS** (warn: both auditors failed, treat as PASS) |
+
+**Rationale: any VETO = combined VETO.** Math errors must be caught conservatively; a single auditor detecting a real error is sufficient to block the proposal.
+
+#### 3.5.4: Apply Veto Gate
+
+1. **If combined verdict is VETO:**
    - Do NOT proceed to Step 4 score aggregation
-   - Write `aggregation.md` with: `Gate: VETO by math audit — score aggregation skipped` plus the Fatal Issues list
+   - Write `aggregation.md` with: `Gate: VETO by math audit — score aggregation skipped`, which auditor(s) issued VETO, and the Fatal Issues list
    - Translate Fatal Issues into qualitative metareview language (strip "VETO", "math auditor", mechanism language — present as "Reviewers identified mathematical errors in the theoretical analysis: ...")
-   - Include Non-fatal Concerns as additional concerns if present
+   - Merge Fatal Issues from all auditors that issued VETO
+   - Include Non-fatal Concerns from all available audits as additional concerns
    - Proceed directly to Step 5 (synthesize metareview) then Step 6 FAIL path
-3. **If `Verdict: PASS`:**
-   - Include any Non-fatal Concerns from math-audit.md as additional concerns in Step 5
+2. **If combined verdict is PASS:**
+   - Include Non-fatal Concerns from ALL available audit files as additional concerns in Step 5
    - Proceed normally to Step 4
 
 ### Completion Criteria
 
-- [x] `math-audit.md` written (or failure logged)
+- [x] Both math audit files attempted in parallel (or failures logged)
+- [x] Combined verdict computed per combination table
 - [x] Veto gate checked before score aggregation
-- [x] If VETO: aggregation skipped, fatal issues translated to metareview
+- [x] If VETO: aggregation skipped, fatal issues from all vetoing auditors translated to metareview
 
 ---
 
@@ -444,7 +501,7 @@ Read **C** = `UserRevisionCycle`, **R** = `UserRevisionRound`, **B** = `UserRevi
 3. **Minimum panel** — at least 3 valid reviews before aggregation
 4. **Mean aggregation** — uses all reviewer signal; if N >= 5, drop the highest score per dimension for stricter evaluation
 5. **Dual Lean 4 audit** — reviewers assess from Proposal.md; orchestrator verifies from source files
-6. **Math expert veto** — math auditor runs in parallel; VETO bypasses score aggregation and triggers FAIL directly
+6. **Dual math expert veto** — Claude (opus) and GPT math auditors run in parallel; if EITHER issues VETO, score aggregation is bypassed and FAIL is triggered; if one auditor is unavailable, the other's verdict is used alone (with warning)
 7. **State-driven communication** — gate result communicated only via state.md, never in metareview
 8. **Fallback resilience** — follow the fallback chain until 3 reviews are collected
 9. **Cross-invocation via Skill tool** — all ideation invocations must use the Skill tool explicitly

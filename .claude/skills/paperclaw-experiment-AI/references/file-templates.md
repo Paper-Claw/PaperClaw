@@ -17,11 +17,11 @@ updated: <timestamp>
 
 ## Servers
 
-| Name | Host | Status | GPUs | Free RAM (at last check) | Last Checked | Local? | Last Pull |
-|------|------|--------|------|--------------------------|--------------|--------|-----------|
-| main | alice@gpu1.example.com | connected | 4× A100 80G | 120G / 512G | <timestamp> | no | <timestamp> |
-| gpu2 | bob@192.168.1.42 | disconnected | — | — | <timestamp> | no | never |
-| local | alice@localhost | connected | 1× RTX 3090 | 18G / 32G | <timestamp> | **yes** | <timestamp> |
+| Name | Host | Status | GPUs | Free RAM (at last check) | Last Checked | Local? | Last Pull | code_dirty |
+|------|------|--------|------|--------------------------|--------------|--------|-----------|------------|
+| main | alice@gpu1.example.com | connected | 4× A100 80G | 120G / 512G | <timestamp> | no | <timestamp> | no |
+| gpu2 | bob@192.168.1.42 | disconnected | — | — | <timestamp> | no | never | no |
+| local | alice@localhost | connected | 1× RTX 3090 | 18G / 32G | <timestamp> | **yes** | <timestamp> | no |
 
 ## GPU Slots
 
@@ -109,9 +109,9 @@ updated: <timestamp>
 
 **Every time state.md is written, immediately:**
 1. Write `./experiment/status.json` with the same data in machine-readable form.
-2. Sync the Todo list (see below).
+2. Sync Tasks (see below).
 
-Both actions (status.json write + TodoWrite call) are performed by the **skill in the main session** — never by the executor subagent.
+Both actions (status.json write + Task sync) are performed by the **skill in the main session** — never by the executor subagent.
 
 ---
 
@@ -137,7 +137,8 @@ Both actions (status.json write + TodoWrite call) are performed by the **skill i
       "gpus": "4× A100 80G",
       "free_ram": "120G / 512G",
       "last_checked": "<ISO-timestamp>",
-      "last_pull": "<ISO-timestamp>"
+      "last_pull": "<ISO-timestamp>",
+      "code_dirty": false
     }
   ],
 
@@ -183,41 +184,38 @@ Both actions (status.json write + TodoWrite call) are performed by the **skill i
 
 ---
 
-## Todo Sync
+## Task Sync
 
-The **skill in the main session** calls TodoWrite every time state.md is updated. The executor never touches todos. Todos are rebuilt from scratch on each sync (read current list, replace all `paperclaw-*` entries with the new set).
+The **skill in the main session** updates Tasks (via TaskCreate/TaskUpdate) every time state.md is updated. The executor never touches Tasks. Tasks are updated to reflect the current pipeline state after every Agent() return.
 
-### Todo Structure (max ~10 items)
+### Task Content Structure
 
-**1. Current Phase** (always 1 item, `in_progress`)
-
-```
-Phase <N>: <Phase Name> — <completed>/<total> experiments done, Step <X.Y>
-```
-
-Example: `Phase 2: Baseline Reproduction — 5/8 experiments done, Step 2.3`
-
-**2. Doing Jobs** — one item per active job (`in_progress`)
+The main session maintains a single `paperclaw-experiment` task with structured content:
 
 ```
-[running] <session_id> on <server>:GPU<N> (since <HH:MM>Z)
+Line 1: Current Phase + overall progress
+Lines 2+: One line per active/pending/completed job
+Last line: Next action or blocker
 ```
 
-Example: `[running] paperclaw-baseline-bert on main:GPU0 (since 09:00Z)`
-
-**3. Next Jobs** — up to 3 queued items from job queue (`pending`)
-
+**Example (normal operation):**
 ```
-[next] <experiment> (~<est_vram> MiB, ~<est_time>)
+Phase 2: Baseline Reproduction (3/5 done)
+ ✅ BERT-base: F1=85.1 (target 85.2) ✓
+ ✅ ResNet-50: Acc=76.2 ✓
+ ✅ DenseNet: Acc=75.8 ✓
+ 🔄 ViT-L: training on server-B GPU 0 (epoch 45/100, ~2h left)
+ ⏳ EfficientNet: queued, waiting for GPU
+ Next: checking running jobs in 30min
 ```
 
-Example: `[next] Baseline-C / Dataset-X (~12000 MiB, ~2h)`
-
-**4. Blocker** — only when `Status: blocked` (`in_progress`)
-
+**Example (blocker):**
 ```
-BLOCKED: <description> — reply: <option A> / <option B> / <option C>
+Phase 2: Baseline Reproduction (3/5 done)
+ BLOCKED: Baseline BERT -3.2% after 5 iters — reply: "skip" / "retry with hint: <your suggestion>" / "accept gap"
 ```
+
+### Blocker Reply Options
 
 The reply options must be specific to the blocker type:
 
@@ -230,14 +228,9 @@ The reply options must be specific to the blocker type:
 | Non-empty working directory | `"proceed (keep files)"` / `"use different dir: <path>"` |
 | Sudo required | `"password: <sudo password>"` / `"skip command"` |
 
-Example blocker todo:
-```
-BLOCKED: Baseline BERT -3.2% after 5 iters — reply: "skip" / "retry with hint: <your suggestion>" / "accept gap"
-```
-
 ### When the session expired and you restart
 
-The skill reads `status.json` on startup and immediately syncs todos before doing anything else. If `Status: blocked`, it re-asks the question in chat **and** shows the blocker todo with reply options so you know exactly what to type.
+The skill reads `status.json` on startup and immediately syncs Tasks before doing anything else. If `Status: blocked`, it re-asks the question in chat **and** updates the Task with the blocker and reply options so the user knows exactly what to type.
 
 ---
 

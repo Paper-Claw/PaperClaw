@@ -7,7 +7,8 @@ description: >
   correctness veto gate), score aggregation, Lean 4 formalization audit,
   metareview synthesis (with information barrier enforcement), and pass/fail
   gate decision. Spawns paperclaw-ideation-reviewer (opus) for R1 Claude
-  review and paperclaw-math-auditor (opus) for mathematical correctness audit.
+  review and paperclaw-math-auditor (opus) for Claude math audit; also runs
+  GPT math audit via codex CLI in parallel — combined verdict: any VETO triggers FAIL.
   Handles all other reviewers via codex/opencode CLI. This is the default
   workhorse — invoke instead of running the reviewing skill directly.
 tools: ["Read", "Write", "Edit", "Grep", "Glob", "Bash", "WebSearch", "Agent"]
@@ -42,7 +43,8 @@ Fixed mapping:
 | R3 (Gemini) | Methodical novelty assessor |
 | R4 (DeepSeek) | Devil's advocate |
 | R5 (Kimi) | Breadth reviewer |
-| Math Auditor (Claude opus) | Mathematical correctness specialist — NL proof correctness only, veto power |
+| Math Auditor Claude (opus) | Mathematical correctness specialist — NL proof correctness only, co-veto power |
+| Math Auditor GPT (codex) | Mathematical correctness specialist — NL proof correctness only, co-veto power |
 
 ### Step 3 — Dispatch in Parallel
 - All reviewers AND math auditor run simultaneously (5-minute timeout each)
@@ -54,27 +56,65 @@ Fixed mapping:
   )
   ```
 - **R2-R5:** Via CLI (`codex exec` or `opencode run`) with persona + rubric + format
-- **Math Auditor:** Spawn via Agent tool simultaneously (run_in_background: true):
+- **Math Auditor Claude:** Spawn via Agent tool simultaneously (run_in_background: true):
   ```
   Agent(
     subagent_type="paperclaw-math-auditor",
-    prompt="Read ./Proposal.md Section 4. Evaluate mathematical correctness of all theorems and NL proofs. Write your audit to ./ideation/reviews/iteration-N/math-audit.md."
+    run_in_background=true,
+    prompt="Read ./Proposal.md Section 4. Evaluate mathematical correctness of all theorems and NL proofs. Write your audit to ./ideation/reviews/iteration-N/math-audit-claude.md following the output format in your instructions."
   )
   ```
+- **Math Auditor GPT:** Launch via codex CLI simultaneously (run_in_background via Bash):
+  ```bash
+  timeout 300 codex exec \
+    -c 'sandbox_permissions=["disk-full-read-access","disk-write-access"]' \
+    "You are an independent mathematical expert. Read ONLY ./Proposal.md Section 4 (Theoretical Analysis). Evaluate mathematical correctness of all theorems and natural-language proofs.
+
+  For each theorem/lemma, assess: (1) Is the statement well-formed and non-trivial? (2) Is each proof step logically justified with no invalid steps? (3) Does the proof establish the stated conclusion (not a weaker version)?
+
+  Issue VETO if ANY of the following: a theorem is mathematically false under its stated assumptions; a proof step is logically invalid (not just informal); the proof proves a materially different claim than stated; a critical assumption was silently used but not declared AND this makes the result significantly weaker.
+  Issue PASS if all theorems are sound, even if proofs are informal or sketched. Reserve VETO for clear mathematical errors only. When in doubt: PASS with concerns.
+
+  Write your audit to ./ideation/reviews/iteration-N/math-audit-gpt.md in this format:
+  # Math Audit — Iteration N
+  ## Verdict: PASS / VETO
+  [One paragraph summary]
+  ## Theorem-by-Theorem Analysis
+  ### Theorem X: [Name]
+  **Statement assessment:** [well-formed and non-trivial / trivial / ill-formed / false]
+  **Proof assessment:** [sound / has gap / incorrect]
+  - Step [X]: [finding]
+  **Overall verdict for this theorem:** PASS / CONCERN / FATAL
+  ## Summary
+  ### Fatal Issues (cause VETO)
+  - [precise description, which theorem, which step]
+  ### Non-fatal Concerns
+  - [minor gaps or imprecisions]
+  ## Revision Guidance (if VETO)
+  [Specific actionable guidance]"
+  ```
 - Fallback chain for R1-R5: `codex → opencode (same family) → opencode (any) → Claude persona`
-- If math auditor fails/times out: log failure, treat as PASS (warn in aggregation.md), continue
+- If Claude math auditor fails/times out: log failure, GPT result used alone (warn in aggregation.md)
+- If GPT math auditor fails/times out: log failure, Claude result used alone (warn in aggregation.md)
+- If both fail: log failure, treat as PASS (warn in aggregation.md), continue
 - Save reviews to `./ideation/reviews/iteration-N/RX-[family].md`
-- Save math audit to `./ideation/reviews/iteration-N/math-audit.md`
+- Save math audits to `./ideation/reviews/iteration-N/math-audit-claude.md` and `math-audit-gpt.md`
 
 ### Step 4 — Math Audit Veto Check + Score Aggregation
 
-**First: Check math audit verdict (before any score aggregation)**
-1. Read `./ideation/reviews/iteration-N/math-audit.md`
-2. If `Verdict: VETO`:
-   - Write `aggregation.md` with: `Gate: VETO by math audit — score aggregation skipped` plus the Fatal Issues list
+**First: Combine dual math audit verdicts (before any score aggregation)**
+1. Read `./ideation/reviews/iteration-N/math-audit-claude.md` (if exists) → extract Verdict line
+2. Read `./ideation/reviews/iteration-N/math-audit-gpt.md` (if exists) → extract Verdict line
+3. Apply combination logic:
+   - Either VETO (or both) → **combined VETO** (note which auditor(s) triggered it)
+   - Both PASS → **combined PASS**
+   - One missing → use the other's verdict alone (log warning in aggregation.md)
+   - Both missing → treat as PASS (log warning: both auditors failed)
+4. If **combined VETO**:
+   - Write `aggregation.md` with: `Gate: VETO by math audit — score aggregation skipped`, which auditor(s) issued VETO, and the Fatal Issues list (merged from all vetoing auditors)
    - Skip steps 4.2–4.5; proceed directly to Step 5 (synthesize metareview using Fatal Issues)
    - In Step 6, treat as FAIL regardless of reviewer scores
-3. If `Verdict: PASS` (or math-audit.md missing): proceed to score aggregation below
+5. If **combined PASS** (or both auditors failed): proceed to score aggregation below
 
 **Then: Score aggregation (only if math audit passed)**
 1. Parse `### Scores` section from each review (N, S, T, F dimensions)
@@ -138,6 +178,6 @@ If any match found, rewrite the offending lines before proceeding.
 - Never expose the veto mechanism, "math auditor", or "VETO" language in the metareview — translate to qualitative concerns
 - Log every step to `./ideation/log.md` with timestamps
 - If a reviewer times out or fails, apply fallback chain before recording as missing
-- If math auditor times out or fails, log and treat as PASS (do not block on it)
+- If one math auditor times out or fails, log and use the other's verdict alone; if both fail, treat as PASS (do not block on it)
 - Treat review files as append-only per iteration (never modify previous iteration files)
 - The Lean 4 audit is YOUR responsibility — do not delegate it to reviewers

@@ -7,7 +7,7 @@ description: >-
   Runs an auto-pilot loop of server setup → experiment planning → baseline reproduction →
   our method implementation → report generation. All working state lives in ./experiment/.
   Produces Report.md, Report.html, Report_zh.md, and Report_zh.html as final deliverables.
-version: 2.0.0
+version: 3.0.0
 ---
 
 # PaperClaw Experiment AI — Full Experiment Execution Pipeline
@@ -40,68 +40,407 @@ All experiment code on the remote server MUST follow these 7 principles. They ar
 
 ```mermaid
 flowchart TD
-    P0["Phase 0: Server Setup & Hardware Probe"]
-    P1["Phase 1: Read Proposal → Experiment Plan"]
-    P2["Phase 2: Baseline Reproduction"]
-    P3["Phase 3: Our Method Implementation"]
-    P4["Phase 4: Completeness Check → Report Generation"]
+    MAIN["Main Session\n(Phase State Machine + Dispatcher)"]
 
-    P0 --> P1
-    P1 -->|"1.1–1.3: executor"| P1a["Research baselines & datasets"]
-    P1a -->|"1.4: strategist"| P1b["Design experiment matrix"]
-    P1b -->|"1.5–1.7: executor"| P1c["Write plan.md & results.md"]
-    P1c --> P2
+    MAIN --> P0["Phase 0: Server Setup"]
+    P0 -->|"executor(setup)"| P0done["Servers probed"]
 
-    P2 -->|"iterative: executor"| P2loop{"Results match\nreported numbers?"}
-    P2loop -->|No, iter ≤ 5| P2
-    P2loop -->|No, iter > 5| User1["Escalate to user"]
-    P2loop -->|Yes| P3
+    P0done --> P1["Phase 1: Experiment Planning"]
+    P1 -->|"executor(research)"| P1a["Baselines & datasets surveyed"]
+    P1a -->|"strategist(Task A)"| P1b["Experiment matrix designed"]
+    P1b -->|"executor(scaffold)"| P1c["plan.md + codebase ready"]
 
-    P3 -->|"3.1: strategist"| P3a["Implement core architecture"]
-    P3a -->|"3.2–3.3: executor"| P3loop{"Beats all\nbaselines?"}
-    P3loop -->|"No, iter 1–2: executor"| P3
-    P3loop -->|"No, iter ≥ 3: strategist"| P3diag["Diagnose & fix"]
-    P3diag --> P3
-    P3loop -->|"No, iter > 10"| User2["Escalate to user"]
-    P3loop -->|Yes| P3b["3.5–3.9: Ablation + Multi-seed + Claim-proof + Analysis"]
-    P3b --> P4
+    P1c --> P2["Phase 2: Baseline Reproduction"]
+    P2 -->|"parallel executors"| P2par["executor(B1) ∥ executor(B2) ∥ executor(B3)"]
+    P2par --> P2check{"All reproduced?"}
+    P2check -->|"fail, iter < 3"| P2debug["executor(debug) → relaunch"]
+    P2debug --> P2check
+    P2check -->|"fail, iter ≥ 3"| P2strat["strategist(Task E)"]
+    P2strat --> P2debug
+    P2check -->|"fail, iter > 5"| User1["Escalate to user"]
+    P2check -->|Yes| P3
 
-    P4 -->|"4.1: executor"| P4a["Completeness check"]
-    P4a -->|"4.2: strategist"| P4b["Generate Report.md"]
-    P4b -->|"4.3–4.6: executor"| P4c["HTML + Chinese + Git commit"]
+    P3["Phase 3: Our Method"] -->|"strategist(Task B)"| P3a["Architecture implemented"]
+    P3a --> P3loop["executor(launch) → check → debug loop"]
+    P3loop --> P3eval{"Beats all baselines?"}
+    P3eval -->|"No, iter 1–2"| P3loop
+    P3eval -->|"No, iter ≥ 3"| P3diag["strategist(Task C)"]
+    P3diag --> P3loop
+    P3eval -->|"No, iter > 10"| User2["Escalate to user"]
+    P3eval -->|Yes| P3par["parallel: ablation ∥ multi-seed ∥ claim-proof ∥ analysis"]
+    P3par --> P4
+
+    P4["Phase 4: Report"] -->|"executor(completeness-check)"| P4a["All experiments verified"]
+    P4a -->|"strategist(Task D)"| P4b["Report.md generated"]
+    P4b -->|"parallel executors"| P4c["executor(HTML) ∥ executor(中文翻译)"]
+    P4c --> DONE["executor(git-commit) → Complete"]
+
+    MAIN -.->|"after each Agent return"| SYNC["Update state.md\nSync Tasks\nOutput progress"]
 
     style P1b fill:#f9e2af
     style P3a fill:#f9e2af
     style P3diag fill:#f9e2af
     style P4b fill:#f9e2af
+    style P2strat fill:#f9e2af
+    style SYNC fill:#a6e3a1
 ```
 
-> Yellow nodes = strategist (opus). All other nodes = executor (sonnet).
+> Yellow = strategist (opus). Green = main session sync point. All other = executor (sonnet).
 
-All phases run on the **local machine** (where Claude Code is running).
-Compute-heavy training/evaluation is executed on the **experiment server** via SSH.
+All orchestration runs on the **local machine** (main session).
+Compute-heavy training/evaluation is executed on **experiment servers** via SSH.
 
 ---
 
 ## Agent Architecture
 
-This skill dispatches work to two dedicated agents. The entry model of the current session does not matter — routing is determined by agent definitions.
+The main session (this skill) is the **central dispatcher**. It drives a Phase state machine, dispatches executors and strategists, and synchronizes state after every return. Executors and strategists are stateless — they receive full context in their prompt and return structured results.
 
-| Agent | Model | Role |
-|-------|-------|------|
-| `paperclaw-experiment-executor` | sonnet | Default: all execution, SSH, research, debugging, logging, git, translation |
-| `paperclaw-experiment-strategist` | opus | High-judgment only: 4 tasks requiring original reasoning |
+| Layer | Agent | Model | Role |
+|-------|-------|-------|------|
+| Dispatcher | **Main session** (this skill) | inherited | Phase state machine, dispatch decisions, Task sync, user feedback, state.md management |
+| Worker | `paperclaw-experiment-executor` | sonnet | Stateless single-task execution — one invocation per task, returns immediately |
+| Reasoner | `paperclaw-experiment-strategist` | opus | High-judgment reasoning — 5 trigger points requiring original analysis |
 
-### Strategist Triggers
+### Strategist Triggers (main session invokes directly)
 
-| Phase.Step | Task |
-|------------|------|
-| 1.4 | Design full experiment matrix + claim-proof table |
-| 3.1 | Implement core method architecture from Proposal.md |
-| 3.3 (iter ≥ 3, i.e., starting from iteration 3) | Diagnose structural performance gap and form fix hypothesis |
-| 4.2 | Generate Report.md (full synthesis of all results) |
+| Phase.Step | Task | Condition |
+|------------|------|-----------|
+| 1.4 | Task A: Design experiment matrix + claim-proof table | After baseline/dataset research |
+| 2.x | Task E: Diagnose baseline reproduction failure | Reproduction fails iter ≥ 3 |
+| 3.1 | Task B: Implement core method architecture | After all baselines reproduced |
+| 3.3 | Task C: Diagnose structural performance gap | Method underperforms iter ≥ 3 |
+| 4.2 | Task D: Generate Report.md | After completeness check |
 
-Everything else → executor. After strategist returns, resume with executor.
+### Executor Task Types (main session dispatches)
+
+| Task Type | When Used | Returns Immediately? |
+|-----------|-----------|---------------------|
+| `setup` | Phase 0 server probe | Yes |
+| `research` | Phase 1 literature survey | Yes |
+| `scaffold` | Phase 1 project structure | Yes |
+| `integrate-baseline` | Phase 2 adapt baseline code | Yes |
+| `launch` | Start any training/eval job | **Yes — fire and forget** |
+| `check` | Poll running job status | Yes |
+| `debug` | Fix code after failure | Yes (does not relaunch) |
+| `reproduce` | End-to-end short job (< 30 min) | Waits for completion (45-min hard timeout) |
+| `completeness-check` | Phase 4 verification | Yes |
+| `format` | HTML conversion / Chinese translation | Yes |
+| `git-commit` | Commit milestone | Yes |
+
+---
+
+## Main Dispatch Loop
+
+The main session runs a **state-machine loop**. At the top of every iteration, it reads `state.md` to determine the current position — never relies on context memory.
+
+```
+loop:
+  # 1. Ground truth: always read state.md
+  read state.md → current_phase, active_jobs, job_queue, code_dirty_servers
+
+  # 2. Handle active jobs (fire-and-poll)
+  if active_jobs has running jobs:
+    invoke executor("check", active_jobs)
+    process results:
+      - completed jobs → update results, release GPU, dequeue next job
+      - failed jobs → add to debug queue (or trigger strategist if iter ≥ 3)
+      - still running → no action
+    update state.md → sync Tasks → output progress to user
+
+  # 3. Handle debug queue
+  if debug_queue is not empty:
+    for each failed job:
+      if iteration < 3:
+        invoke executor("debug", error_info, history)
+        if fix ready: invoke executor("launch", rerun)
+      else:
+        invoke strategist (Task C or Task E)
+        invoke executor("debug", strategist fix plan)
+        invoke executor("launch", rerun)
+    update state.md → sync Tasks
+
+  # 4. Fill idle GPUs (saturation)
+  if job_queue has pending jobs AND idle GPUs available:
+    for each (job, gpu) assignment:
+      check code_dirty for target server
+      if not code_dirty or job is read-only:
+        invoke executor("launch", job, server, gpu)
+    update state.md → sync Tasks
+
+  # 5. Check phase completion
+  if current phase is complete (all jobs done, no failures):
+    execute phase-transition logic (see per-phase recipes below)
+    update state.md → sync Tasks → output milestone to user
+    if all phases done: break
+
+  # 6. Wait if all GPUs busy and nothing else to do
+  if active_jobs all running AND no actionable items:
+    compute polling_interval = min(earliest_eta / 3, 30 min)
+    output: "所有 GPU 满载运行中。最早完成预计 {eta}。每 {interval} 检查一次。"
+    output: "你也可以关闭会话，稍后重新运行 skill 继续。"
+    sync Tasks with current status
+    sleep(polling_interval)
+    continue loop
+```
+
+### Per-Phase Dispatch Recipes
+
+**Phase 0 → Phase 1:**
+```
+invoke executor("setup", server_info)
+update state.md with hardware/GPU slots
+→ Phase 1
+```
+
+**Phase 1:**
+```
+invoke executor("research", "baselines and datasets")
+invoke strategist(Task A, "design experiment matrix")
+invoke executor("scaffold", plan.md)
+invoke executor("launch" or "reproduce" per server, push codebase to all servers)
+→ Phase 2
+```
+
+**Phase 2 (parallel baselines):**
+```
+for each baseline:
+  add to job_queue: {type: reproduce/launch, baseline, server, gpu}
+enter main loop → jobs are dispatched via saturation, checked, debugged
+when all baselines reproduced → Phase 3
+```
+
+**Phase 3:**
+```
+invoke strategist(Task B, "implement method")
+invoke executor("git-commit", "method architecture")
+add training job to job_queue
+enter main loop → launch, check, debug/strategist cycle
+when beats all baselines:
+  add ablation/seed/claim-proof/analysis jobs to job_queue (parallel)
+  enter main loop → all dispatched via saturation
+when all done → Phase 4
+```
+
+**Phase 4:**
+```
+invoke executor("completeness-check")
+invoke strategist(Task D, "generate Report.md")
+parallel: invoke executor("format", html) ∥ invoke executor("format", chinese)
+invoke executor("git-commit", "final")
+→ Complete
+```
+
+---
+
+## Parallel Coordination Rules
+
+### Read-Only vs Code-Modify Tasks
+
+| Task Type | Modifies Codebase? | Can Run in Parallel? |
+|-----------|-------------------|---------------------|
+| `launch` (stable code) | No | ✅ Unlimited parallel on different GPUs |
+| `check` | No | ✅ Always parallel |
+| `reproduce` (stable code) | No | ✅ Unlimited parallel on different GPUs |
+| `debug` | **Yes** | ⚠️ See code_dirty rules below |
+| `integrate-baseline` | **Yes** | ⚠️ Sequential on same server |
+| `scaffold` | **Yes** | N/A (runs once) |
+
+### code_dirty Flag
+
+The main session tracks a `code_dirty` flag per server in state.md:
+
+1. When a `debug` or `integrate-baseline` executor modifies code and pushes to server X → set `code_dirty[X] = true`
+2. While `code_dirty[X] = true`:
+   - Do NOT dispatch new `launch` tasks to server X (the pushed code may affect running jobs)
+   - Wait for all active jobs on server X to complete, then clear `code_dirty[X]`
+   - Exception: if the code change only touches an independent module (different method's model file), the main session may judge it safe and keep `code_dirty[X] = false`
+3. After all active jobs on server X complete and the new code is stable → set `code_dirty[X] = false`, resume dispatching to X
+
+### Impact Assessment for Code Changes
+
+Before setting `code_dirty`, the main session evaluates what was changed:
+
+| Change Type | Impact | code_dirty? |
+|-------------|--------|------------|
+| Only one method's model file (e.g., `models/resnet.py`) | Cannot affect other methods running in memory | No — safe to push while other methods run |
+| Shared infrastructure (data loader, training loop, eval, utils) | Could affect ALL running jobs | **Yes** — wait for all jobs on that server to finish |
+| Config files only | No impact on running jobs | No |
+| Dependencies (`pyproject.toml`, `requirements.txt`) | Doesn't affect running processes | No (but needs `pip install` on next launch) |
+
+### File Isolation in Parallel
+
+- Each parallel executor writes ONLY to its assigned output file (e.g., `results/baseline-bert.md`, `ablation/variant-A.md`)
+- Shared files (`results.md`, `state.md`, `log.md`) are written ONLY by the main session after executors return
+- Main session merges parallel executor results into shared files after all parallel tasks in a batch complete
+
+---
+
+## Task Feedback System
+
+The main session updates Tasks after **every** Agent() return to provide real-time user visibility. Additionally, the main session outputs a **structured completion report** directly to the user after every significant action.
+
+### When to Update Tasks
+
+- Phase transition
+- Job launched / completed / failed
+- Strategist invoked / returned
+- Entering wait-for-job state
+- Blocker encountered (user input needed)
+
+### Task Content Structure
+
+```
+Subject: paperclaw-experiment
+Content format:
+  Line 1: Current Phase + overall progress
+  Lines 2+: One line per active/pending/completed job
+  Last line: Next action or blocker
+
+Example:
+  "Phase 2: Baseline Reproduction (3/5 done)
+   ✅ BERT-base: F1=85.1 (target 85.2) ✓
+   ✅ ResNet-50: Acc=76.2 ✓
+   ✅ DenseNet: Acc=75.8 ✓
+   🔄 ViT-L: training on server-B GPU 0 (epoch 45/100, ~2h left)
+   ⏳ EfficientNet: queued, waiting for GPU
+   Next: checking running jobs in 30min"
+```
+
+### User-Facing Output (Completion Reports)
+
+After **every** executor/strategist return, the main session outputs a structured completion report directly to the user. This is mandatory — the user must never be left wondering what just happened.
+
+#### After job completion (executor "check" finds a finished job):
+```
+━━━ JOB COMPLETED ━━━━━━━━━━━━━━━━━━
+Experiment: BERT-base reproduction (Dataset-A)
+Server: server-A GPU 0 | Duration: 1h 42m
+Results:
+  F1 = 85.1 (target 85.2, gap -0.1 ✓)
+  Acc = 92.3 (target 92.5, gap -0.2 ✓)
+Artifacts:
+  checkpoints/server-A/model_best.pt
+  results/server-A/metrics.json
+  (see results/README.md for full index)
+━━━ OVERALL PROGRESS ━━━━━━━━━━━━━━━
+Phase 2: 3/5 baselines done | Running: ViT-L (epoch 45/100) | Queued: EfficientNet
+Next: checking running jobs in 30min
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+#### After job launch:
+```
+━━━ JOB LAUNCHED ━━━━━━━━━━━━━━━━━━━
+Experiment: ViT-L reproduction (Dataset-A)
+Server: server-B GPU 0 | Estimated: ~4h
+Tmux: paperclaw-vit-l-datasetA
+━━━ OVERALL PROGRESS ━━━━━━━━━━━━━━━
+Phase 2: 2/5 baselines done | Running: BERT-base, ViT-L | Queued: DenseNet, EfficientNet
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+#### After job failure + debug:
+```
+━━━ JOB FAILED ━━━━━━━━━━━━━━━━━━━━━
+Experiment: ResNet-50 reproduction (Dataset-A), attempt 2
+Error: RuntimeError: CUDA out of memory (batch_size=64, GPU VRAM 16GB)
+Fix: reduced batch_size 64→32, enabled gradient accumulation (accum_steps=2)
+Code pushed to server-A
+━━━ NEXT ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Relaunching ResNet-50 training (server-A GPU 1)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+#### After strategist return:
+```
+━━━ STRATEGIST COMPLETE ━━━━━━━━━━━━
+Task: Task C — performance gap diagnosis (iter 3)
+Diagnosis: attention layer head_dim miscalculation causing information loss
+Fix plan: head_dim = hidden_size // num_heads (was hidden_size)
+Hypothesis: expected F1 improvement of 2-3 points after fix
+Output: experiment/log.md (diagnosis record)
+━━━ NEXT ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Executor applying fix, then relaunching training
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+#### Phase transition:
+```
+━━━ PHASE COMPLETE ━━━━━━━━━━━━━━━━━
+Phase 2: Baseline Reproduction — all 5 baselines reproduced
+  BERT-base:    F1=85.1 (target 85.2 ✓)
+  ResNet-50:    Acc=76.2 (target 76.5 ✓)
+  DenseNet:     Acc=75.8 (target 75.9 ✓)
+  ViT-L:        Acc=78.1 (target 78.3 ✓)
+  EfficientNet: Acc=77.5 (target 77.6 ✓)
+Total time: 8h 23m
+━━━ ENTERING PHASE 3 ━━━━━━━━━━━━━━━
+Phase 3: Our Method Implementation
+Next: invoking Strategist (Task B) to design method architecture
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+#### Periodic check (all jobs still running):
+```
+━━━ STATUS CHECK ━━━━━━━━━━━━━━━━━━━
+Running:
+  BERT-base @ server-A GPU 0: epoch 67/100, loss=0.23, ~55min remaining
+  ViT-L @ server-B GPU 0: epoch 12/100, loss=1.42, ~3h remaining
+Queued: DenseNet, EfficientNet
+Next check: in 30 minutes
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Output Rules
+
+1. **Always output after every Agent() return** — even if the result is "all jobs still running, no changes"
+2. **Always include overall progress** — the user must always see the big picture (X/Y done, what's running, what's queued)
+3. **Always include "Next"** — the user must always know what happens next
+4. **Always list artifact paths** — when a job completes and artifacts are pulled, list the local paths and point to the README for full index
+
+---
+
+## Job Lifecycle
+
+Every training/evaluation job follows a strict lifecycle managed by the main session:
+
+```mermaid
+stateDiagram-v2
+    [*] --> queued: added to job_queue
+    queued --> launching: GPU assigned, executor dispatched
+    launching --> running: executor("launch") returned
+    running --> checking: executor("check") dispatched
+    checking --> completed: job finished, artifacts pulled
+    checking --> running: still running, check later
+    checking --> failed: job crashed
+    failed --> debugging: executor("debug") dispatched
+    debugging --> launching: fix applied, ready to relaunch
+    debugging --> strategist: iter ≥ 3, needs deep diagnosis
+    strategist --> debugging: fix plan received
+    completed --> [*]
+```
+
+### Job Duration and Dispatch Mode
+
+| Estimated Duration | Dispatch Mode | Behavior |
+|-------------------|---------------|----------|
+| < 30 minutes | `reproduce` | Executor waits internally, returns with result |
+| ≥ 30 minutes | `launch` + `check` | Executor returns immediately; main session polls |
+
+The main session determines estimated duration from `plan.md` or previous run history.
+
+### Long Job Wait Protocol
+
+When all GPUs are busy and no actionable tasks remain:
+
+1. Calculate `earliest_eta` = min ETA across all running jobs
+2. `polling_interval` = min(`earliest_eta` / 3, 30 minutes)
+3. Output status + ETA to user
+4. Update Tasks with current job statuses
+5. `sleep(polling_interval)` → dispatch `executor("check")` → return to main loop
+
+The user can close the session at any time during wait. Resume Protocol handles reconnection.
 
 ---
 
@@ -111,40 +450,71 @@ When starting a new session, check if `./experiment/state.md` exists:
 
 1. **If exists** → Read state.md to determine current phase/step
 2. **Read log.md** for recent events and context
-3. **Check codebase exists** — If state.md shows phase ≥ 1, verify `./experiment/codebase/` exists. If missing, ask the user before proceeding (something went wrong in a previous session).
+3. **Check codebase exists** — If state.md shows phase ≥ 1, verify `./experiment/codebase/` exists. If missing, ask the user before proceeding.
 4. **Sync server.md → state.md** — Re-read `./experiment/server.md` and compare all `## Connection <name>` blocks to the Servers table in state.md:
-   - Any server whose name is absent from the Servers table is **new** → add a row to the Servers table with `Status: untested`. Run Phase 0 Steps 0.2–0.5 for those servers only (skip Step 0.1). Then, if phase ≥ 1: **push the current codebase** to the new server (Appendix H push command) and create its `.venv` — so it is ready to receive jobs from the saturation loop.
-   - Any server that was in the Servers table but whose `## Connection <name>` block is now **absent from server.md** has been removed by the user. Remove it from the Servers table, GPU Slots, and Server Details in state.md; cancel any queued jobs assigned to it; log the removal.
-   - Servers still present are handled by Step 5 below.
-   - This step also fires when the user explicitly says "I've updated server.md", "I removed a server", "I added a server", etc.
-5. **Check all known servers** (Status was `connected` or `disconnected`) via SSH:
-   - Reachable? Check for active tmux sessions (`tmux list-sessions 2>/dev/null | grep '^paperclaw-'`). If a training job is still running in a `paperclaw-*` session, resume monitoring it instead of restarting. Check latest checkpoint.
-   - Update `Status:` in the Connection block and in the Servers table in state.md.
-   - If SSH **unreachable**: do NOT escalate immediately. Retry once after 30 seconds.
-   - If still unreachable: mark `disconnected` and continue with remaining connected servers.
-   - If **no** servers are reachable (including any newly probed from Step 4): ask user via `AskUserQuestion` with three options:
-     1. **Wait** — user will restore server access; resume after confirmation
-     2. **Local-only mode** — skip all remote operations; continue with local files (plan.md, results.md, report generation only)
-     3. **Abort** — save state and exit cleanly
-   - Record the decision in log.md and proceed accordingly.
-6. **Sync todos** — the main session skill reads status.json and calls TodoWrite to rebuild the `paperclaw-*` todo set (current phase, doing jobs, next jobs, blocker if any). The executor agent must NOT call TodoWrite directly — it only updates state.md and status.json, then returns to the main session which handles todo sync.
-7. **Check for stopped state** — if `Status: stopped` in state.md, output:
+   - Any server whose name is absent from the Servers table is **new** → add a row with `Status: untested`. Run Phase 0 Steps 0.2–0.5 for those servers only. Then, if phase ≥ 1: push codebase and create `.venv`.
+   - Any server in the Servers table but absent from server.md → removed by user. Remove from all state.md tables; cancel queued jobs for it.
+   - This step also fires when the user explicitly says "I've updated server.md", etc.
+5. **Check all known servers** via SSH:
+   - Reachable? Dispatch `executor("check")` to detect active tmux sessions (`paperclaw-*`). If jobs are still running, add them back to `active_jobs` in state.md.
+   - If SSH **unreachable**: retry once after 30 seconds. If still unreachable: mark `disconnected`.
+   - If **no** servers reachable: ask user (wait / local-only / abort).
+6. **Rebuild job state** — Compare `plan.md` experiment list against `results.md` to identify incomplete experiments. Add them to `job_queue` in state.md.
+7. **Sync Tasks** — Update Tasks with current phase, active jobs, pending jobs, blockers.
+8. **Check for stopped state** — if `Status: stopped` in state.md, output:
    > "上次会话已停止，位于 Phase \<N\> Step \<X.Y\>。回复 "resume" 继续，或 "abort" 放弃当前实验状态。"
-   Then wait for the user's reply before proceeding. On `resume`: set `Status: running` in state.md and continue. On `abort`: delete state.md, status.json, and clear todos.
-8. **Resume** from the last incomplete step recorded in state.md
-9. **If Phase 2/3** → also read comparison.md / ours.md for iteration history
+   Wait for user reply. On `resume`: set `Status: running` and continue. On `abort`: delete state.md, status.json, clear Tasks.
+9. **Output resume summary** directly to the user:
+   ```
+   ━━━ RESUMING ━━━━━━━━━━━━━━━━━━━━━
+   Previous session interrupted. Current state:
+    Phase: 2
+    Completed: BERT-base ✓, ResNet-50 ✓
+    Running: ViT-L (tmux session active, epoch 67/100)
+    Queued: DenseNet, EfficientNet
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   ```
+10. **Parse user directive** — If the user provided instructions alongside the skill invocation (not a bare resume), parse and execute before entering the main loop:
+
+   | User Directive | Action |
+   |---|---|
+   | Proposal.md method design changed | Re-read Proposal.md. Invoke strategist(Task B) to re-implement the method. Mark Phase 3 results as `needs-rerun` in state.md. |
+   | Proposal.md claims changed | Re-read Proposal.md. Invoke strategist(Task A) to incrementally update the claim-proof table in plan.md. Add new claim-proof experiments to `job_queue`; remove experiments for deleted claims. |
+   | Proposal.md baselines/datasets changed | Re-read Proposal.md. Diff against plan.md baseline/dataset tables. Add new entries to plan.md and `job_queue`; mark removed entries as `skipped`. |
+   | "Add baseline X" / "Add dataset Y" | Add to plan.md. Dispatch executor(integrate-baseline) if needed. Add reproduction job to `job_queue`. |
+   | "Remove / skip experiment X" | Remove from `job_queue`. Mark as `skipped` in results.md. |
+   | "Re-run experiment X" | Reset experiment status in results.md. Add back to `job_queue`. |
+   | "Change config/hyperparams for X" | Update config file locally. Mark affected experiments as `needs-rerun`. Add to `job_queue`. |
+   | "Skip phase X" / "Jump to phase X" | Update `Current Phase` in state.md. Skip intermediate phases. |
+   | No directive (bare resume) | No action — proceed directly. |
+
+   After executing the directive:
+   - Update state.md with any plan changes
+   - Sync Tasks
+   - Output a directive summary:
+     ```
+     ━━━ DIRECTIVE APPLIED ━━━━━━━━━━━━
+     Change: Proposal.md claims updated
+     Action: Re-planned claim-proof experiments
+       Added: 2 new claim-proof experiments
+       Removed: 1 obsolete claim-proof experiment
+       Unchanged: 3 existing experiments (results preserved)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     ```
+
+11. **Enter main dispatch loop** from the current phase
 
 If the user wants to restart a phase, they must explicitly say so.
 
-### state.md, status.json, Todo Sync, and Progress Tracking
+### state.md, status.json, and Progress Tracking
 
-> See `<ref-dir>/file-templates.md` for complete format templates of state.md (Servers, GPU Slots, Job Queue, Progress, Active Jobs, Server Details), status.json (machine-readable mirror), Todo structure (phase, jobs, blockers with reply options), and Progress Tracking & ETA formula.
+> See `<ref-dir>/file-templates.md` for complete format templates.
 
-**Key rules (kept inline for orchestration):**
-- state.md sections: Servers, GPU Slots, Job Queue, Progress Tracking, Active Jobs, Server Details (Hardware + Software + Scheduling per server), Local Machine
+**Key rules:**
+- state.md sections: Servers, GPU Slots, Job Queue, Progress Tracking, Active Jobs, Server Details, Local Machine
 - Status enum: `running | blocked | waiting-for-user | stopped | complete`
-- **Update state.md** at: phase start, step start/end, blockers, user input requests, job start/finish, concurrent job launch/completion
-- **Every time state.md is written**, immediately write `./experiment/status.json` and sync todos. Both actions are performed by the **skill in the main session** — never by the executor subagent.
+- **state.md is written ONLY by the main session** — never by executor subagents
+- **After every state.md write**: immediately write `./experiment/status.json` and sync Tasks
 
 ---
 
@@ -204,9 +574,9 @@ Sync status.json as normal (`"status": "stopped"`, all active jobs `"killed"`, j
 - Queued jobs cancelled: <count>
 ```
 
-#### Step S.5: Update Todos
+#### Step S.5: Update Tasks
 
-Call TodoWrite to clear all `paperclaw-*` todos and write one:
+Update the `paperclaw-experiment` task:
 ```
 STOPPED: Skill halted at Phase <N> Step <X.Y> — reply "resume" to continue or "abort" to discard state
 ```
@@ -225,9 +595,9 @@ STOPPED: Skill halted at Phase <N> Step <X.Y> — reply "resume" to continue or 
 
 #### Step S.7: Enter Dormant State
 
-Stop all autonomous looping. Do not dispatch any more executor or strategist subagents. Wait for explicit user instruction:
+Exit the main dispatch loop. Do not dispatch any more executor or strategist agents. Wait for explicit user instruction:
 - `resume` → run Resume Protocol from step 1
-- `abort` → confirm with user, then delete `./experiment/state.md`, `./experiment/status.json`, and clear all `paperclaw-*` todos
+- `abort` → confirm with user, then delete `./experiment/state.md`, `./experiment/status.json`, and clear all `paperclaw-*` Tasks
 - Any other instruction → respond normally as a regular assistant (the skill is dormant, not active)
 
 ### Limitations
@@ -252,9 +622,9 @@ All internal files live under `./experiment/`:
 | `state.md` | Overwrite | Current phase, step, blockers, progress tracking, job queue, server hardware/scheduling data |
 | `log.md` | Append-only | Timestamped event log across all phases |
 | `results.md` | Overwrite | Running experiment result tables (human-readable summary) |
-| `checkpoints/` | **Gitignored directory** | Model checkpoints pulled from remote after training (`checkpoints/<server-name>/`) |
-| `results/` | **Gitignored directory** | Raw outputs pulled from remote after eval (`results/<server-name>/`) |
-| `figures/` | **Gitignored directory** | Figures pulled from remote after analysis jobs |
+| `checkpoints/<server-name>/` | **Gitignored directory** | Model checkpoints pulled from remote after training; `README.md` and `README_zh.md` index all files |
+| `results/<server-name>/` | **Gitignored directory** | Raw outputs pulled from remote after eval; `README.md` and `README_zh.md` index all files |
+| `figures/<server-name>/` | **Gitignored directory** | Figures pulled from remote after analysis jobs; `README.md` and `README_zh.md` index all files |
 
 Final outputs in project root (`./`):
 
@@ -573,23 +943,17 @@ For each baseline:
 
 Git commit after each baseline code setup.
 
-#### Step 2.3: Run Baselines (Saturation Parallel)
+#### Step 2.3: Run Baselines (Parallel via Main Dispatch Loop)
 
 Use the project's unified training and evaluation entry points with each baseline's config file.
 
-**Before launching each job**:
-1. Push current codebase to the target server (Appendix H push command).
-2. Run live resource check on ALL connected servers (Appendix F.2 — RAM, CPU, disk only).
-3. Assign job to best available server per saturation loop (Appendix F.3).
-4. For local servers: apply conservative thresholds (Appendix F.1) and wrap command with `nice -n 19 taskset -c 0-<N>` and `ulimit`.
-5. Launch via tmux: `paperclaw-train-baseline-<method>`.
-6. Update Job Queue table in state.md.
+**Main session adds all baseline jobs to `job_queue` in state.md, then enters the main dispatch loop.** The loop handles GPU assignment, executor dispatch, and saturation automatically:
 
-**After each job completes**:
-1. Pull artifacts from that server (Appendix H pull commands).
-2. Update `Last Pull` in state.md Servers table.
-3. Immediately run the saturation loop (Appendix F.3) to fill any freed slot.
-4. Update Job Queue and Active Jobs in state.md to mark job completed with result metric.
+- Each baseline is an independent job → can run in parallel on different GPUs/servers
+- Main session dispatches `executor("launch")` for long jobs or `executor("reproduce")` for short jobs (< 30 min)
+- After each `executor("check")` return: process completed/failed jobs, fill freed GPU slots
+
+**Parallel coordination**: All baselines share the same stable codebase at this point, so parallel launch is always safe (no `code_dirty` concern — code modification only happens during debug).
 
 > **Important**: Jobs that share the same GPU or write to the same files are NOT independent — run them sequentially. Only parallelize truly independent experiments (different methods, different datasets, different GPUs).
 
@@ -601,14 +965,19 @@ If results DO NOT match:
 
 ```mermaid
 flowchart TD
-    A["Reproduction mismatch"] --> B["Log in comparison.md"]
-    B --> C["Diagnose: hyperparams → data → seed → framework → weights"]
-    C --> D["Apply fix & re-run"]
-    D --> E{"Match?"}
-    E -->|"No, iter ≤ 5"| C
-    E -->|"No, iter > 5"| F["Escalate to user"]
-    E -->|Yes| G["Mark reproduced ✅"]
+    A["Reproduction mismatch"] --> B["Main session logs to comparison.md"]
+    B --> C{"Iteration?"}
+    C -->|"iter 1–2"| D["executor(debug): hyperparams → data → seed → framework → weights"]
+    C -->|"iter ≥ 3"| E["strategist(Task E): diagnose structural failure"]
+    E --> D
+    D --> F["executor(launch): re-run with fix"]
+    F --> G{"Match?"}
+    G -->|No, iter ≤ 5| C
+    G -->|"No, iter > 5"| H["Escalate to user"]
+    G -->|Yes| I["Mark reproduced ✅"]
 ```
+
+> **Strategist trigger at iter ≥ 3**: If a baseline fails to reproduce after 2 executor-level debug attempts, the main session invokes the strategist (Task E) to diagnose structural issues (paper ambiguity, framework differences, etc.) before the executor applies the fix.
 
 #### Step 2.5: Log Each Iteration
 
@@ -667,13 +1036,9 @@ git commit -m "feat(method): implement core method architecture"
 
 #### Step 3.2: Initial Training & Debugging
 
-Push current codebase to target server(s), then run on each dataset. Debug common issues: shape mismatches, NaN/Inf loss, OOM, non-convergence. All fixes are made locally in `./experiment/codebase/` using Write/Edit tools, then pushed to the target server before re-running.
+Main session dispatches `executor("launch")` to push codebase and start training on each dataset. Debug common issues via `executor("debug")` tasks: shape mismatches, NaN/Inf loss, OOM, non-convergence. All fixes are made locally by the executor, then pushed before the main session dispatches a relaunch.
 
-After training runs successfully: local git commit + pull artifacts:
-```bash
-git add experiment/codebase/ && git commit -m "feat(method): initial training working on <dataset>"
-```
-Pull checkpoints and results from server (Appendix H pull commands). Update Active Jobs in state.md.
+After training runs successfully: main session dispatches `executor("git-commit")` + pulls artifacts via `executor("check")`.
 
 #### Step 3.3: Iterative Performance Improvement
 
@@ -681,17 +1046,19 @@ Pull checkpoints and results from server (Appendix H pull commands). Update Acti
 
 ```mermaid
 flowchart TD
-    A["Gap detected"] --> B["Analyze source"]
-    B --> C["Hypothesize improvement"]
-    C --> D["Implement & test"]
-    D --> E["Log in ours.md"]
-    E --> F{"Beats all?"}
-    F -->|"No, iter 1–2: executor debug"| B
-    F -->|"No, iter ≥ 3: strategist"| G["Deep diagnosis"]
-    G --> D
-    F -->|"No, iter > 10\n(total, counted from iter 1)"| H["Escalate to user"]
-    F -->|Yes| I["Proceed to 3.5"]
+    A["Main session: gap detected"] --> B{"Iteration?"}
+    B -->|"iter 1–2"| C["executor(debug): hyperparams, augmentation, lr schedule"]
+    B -->|"iter ≥ 3"| D["strategist(Task C): structural diagnosis"]
+    D --> C
+    C --> E["executor(launch): re-train"]
+    E --> F["executor(check): poll until done"]
+    F --> G{"Beats all baselines?"}
+    G -->|No, iter ≤ 10| A
+    G -->|"No, iter > 10"| H["Escalate to user"]
+    G -->|Yes| I["Proceed to 3.5"]
 ```
+
+> **Main session drives the iteration loop**: Each iteration is a separate cycle of dispatch → check → evaluate. The main session updates state.md and Tasks between iterations, giving the user visibility into progress.
 
 Improvement priority: hyperparameters → architecture → training strategy → loss function → ensemble.
 
@@ -708,7 +1075,7 @@ Once our method beats all baselines:
 2. **Hyperparameter sensitivity** — Vary key hyperparameters
 3. **Module replacement** — Replace our components with alternatives
 
-**Parallel scheduling**: Ablation variants are independent — launch multiple in parallel following the resource-aware rules (Appendix F). Each variant gets its own tmux session (`paperclaw-ablation-<variant>`). Check resources before each launch; wait if thresholds are exceeded.
+**Parallel scheduling**: Ablation variants are independent and the codebase is stable at this point — the main session adds all variants to `job_queue` and dispatches them in parallel via the main dispatch loop. Each variant gets its own tmux session (`paperclaw-ablation-<variant>`). No `code_dirty` concerns since all variants use the same stable code with different configs.
 
 Record results in ours.md and results.md. Git commit: `feat(ablation): complete component ablation study`
 
@@ -716,13 +1083,13 @@ Record results in ours.md and results.md. Git commit: `feat(ablation): complete 
 
 Run final config with 3–5 seeds (42, 123, 456, 789, 1024). Report **mean ± std** in results.md.
 
-**Parallel scheduling**: Different seeds are independent — launch multiple seed runs in parallel on separate GPUs or when resources permit. Each gets its own tmux session (`paperclaw-seed-<seed>`). Follow Appendix F resource checks.
+**Parallel scheduling**: Different seeds are independent and use stable code — main session adds all seed runs to `job_queue` and dispatches in parallel via the main dispatch loop. Each gets its own tmux session (`paperclaw-seed-<seed>`).
 
 Git commit: `feat(method): complete multi-seed runs (mean±std reported)`
 
 #### Step 3.7: Claim-Proof Experiments (Resource-Aware Parallel)
 
-Run all claim-proof experiments from the Claim-Proof table in plan.md. Independent claim-proof experiments can run in parallel following Appendix F.
+Run all claim-proof experiments from the Claim-Proof table in plan.md. Independent claim-proof experiments use stable code — main session adds all to `job_queue` and dispatches in parallel via the main dispatch loop.
 1. Implement measurement/comparison code
 2. Run experiment
 3. Check if result supports the claim
@@ -930,7 +1297,7 @@ See **Appendix H** for the canonical PUSH and PULL rsync commands used before/af
 3. Auto-cleanup: When the command finishes, the session closes automatically (since the shell command was the only process). The `tmux wait-for -S` signal lets the local side know it's done.
 4. **Never leave orphaned sessions.** If a session is no longer needed (e.g., after error recovery), kill it explicitly with `tmux kill-session`.
 
-**Polling interval:** Check job status every **5 minutes** for jobs expected to finish within 1 hour; every **15 minutes** for longer jobs. After each check, run the saturation loop (Appendix F.3) to fill any freed slots. If a session disappears unexpectedly (not due to normal completion), immediately check `tail -100 train.log` for the cause. If `train.log` shows no new output for **30+ minutes** during an active training run, treat the job as stuck: capture the last output, kill the session, and apply the relevant fix from Appendix D before restarting.
+**Polling interval:** The main session's dispatch loop calls `executor("check")` periodically: every **5 minutes** for jobs expected to finish within 1 hour; every **15–30 minutes** for longer jobs. After each check return, the main session fills any freed GPU slots with queued jobs. If a session disappears unexpectedly (not due to normal completion), immediately dispatch `executor("check")` to read `tail -100 train.log` for the cause. If `train.log` shows no new output for **30+ minutes** during an active training run, treat the job as stuck: capture the last output, kill the session, and apply the relevant fix from Appendix D before restarting.
 
 Timeout handling: use `tmux` for all long-running jobs (training, evaluation, dataset download), `ConnectTimeout=30` for short commands, retry 3× on SSH drop.
 
@@ -1007,19 +1374,23 @@ git commit -m "<message>"
 6. **Beat all baselines** — Our method must win on all datasets before reporting
 7. **Prove every claim** — Every non-trivial claim must have a dedicated claim-proof experiment
 8. **Expand comparison coverage** — Mine baselines' comparison tables to add SOTA methods and datasets
-9. **Track progress** — Update state.md (Job Queue, Active Jobs, Progress Tracking) at every job boundary
+9. **Track progress** — Main session updates state.md and Tasks after every executor/strategist return
 10. **Reports serve two audiences** — HTML for quick review, MD (EN + CN) for paper writing
 11. **Never store sudo passwords** — Sudo password in session memory only; SSH passwords may be stored in server.md by the user's choice
-12. **Ask when stuck** — 5 iterations for baselines, 10 for our method, then escalate
+12. **Ask when stuck** — 5 iterations for baselines (with strategist from iter 3), 10 for our method, then escalate
 13. **Local is source of truth** — All code lives in `./experiment/codebase/`; never edit code on remote; push before each job, pull after
-14. **Check RAM/CPU/disk before every launch** — For GPU co-location (placing a second job on an occupied GPU): do a soft pre-check (`memory.free > Est.VRAM × 1.1 AND utilization.gpu < 70%`); if it fails, skip that GPU and try another. For the first job on an idle GPU: no pre-check needed — launch and handle OOM reactively (Appendix D)
-15. **Saturate remote servers** — Fill all available server capacity via the job queue (Appendix F.6) and saturation loop (Appendix F.3)
-16. **Protect the local machine** — Local server (`Local?: yes`) gets `nice -n 19`, `taskset`, `ulimit`, and conservative RAM/CPU thresholds; Claude Code must not be starved
-17. **Push is targeted** — Push codebase only to the server receiving the next job; never mass-push to all servers during a debug cycle
-18. **Pipeline prep eagerly** — While jobs run, set up venvs and download datasets on idle servers in parallel
-19. **Pull raw, compute local** — After every job, pull all raw output files (JSON, CSV, logs) to local machine; compute all metrics (mean, std, aggregation) locally from the pulled files; never run metric aggregation scripts on the remote server
-20. **server.md is user-only** — Never write to server.md; it is entirely user-owned; all skill-generated server data (hardware, status, scheduling) lives in state.md
-21. **Stop is graceful** — Respond to `stop` (or `stop: <reason>`) immediately: kill all `paperclaw-*` tmux sessions on all reachable servers, save stopped state, update todos, output confirmation, then enter dormant state. Do not dispatch any new executor or strategist subagents after receiving stop.
+14. **Check RAM/CPU/disk before every launch** — For GPU co-location: do a soft pre-check; if it fails, skip that GPU
+15. **Saturate remote servers** — Fill all available server capacity via job_queue and the main dispatch loop
+16. **Main session is the dispatcher** — state.md is ground truth; read it at every loop iteration; never rely on context memory
+17. **Fire-and-poll for long jobs** — Jobs > 30 min use launch + check pattern; executor never blocks waiting
+18. **code_dirty gates parallel launches** — Code modifications block new launches on the affected server until running jobs complete
+19. **Task feedback always current** — Users should always be able to see what's happening via the Task display
+20. **Protect the local machine** — Local server (`Local?: yes`) gets `nice -n 19`, `taskset`, `ulimit`, and conservative RAM/CPU thresholds; Claude Code must not be starved
+21. **Push is targeted** — Push codebase only to the server receiving the next job; never mass-push to all servers during a debug cycle
+22. **Pipeline prep eagerly** — While jobs run, set up venvs and download datasets on idle servers in parallel
+23. **Pull raw, compute local** — After every job, pull all raw output files (JSON, CSV, logs) to local machine; compute all metrics (mean, std, aggregation) locally from the pulled files; never run metric aggregation scripts on the remote server
+24. **server.md is user-only** — Never write to server.md; it is entirely user-owned; all skill-generated server data (hardware, status, scheduling) lives in state.md
+25. **Stop is graceful** — Respond to `stop` (or `stop: <reason>`) immediately: kill all `paperclaw-*` tmux sessions on all reachable servers, save stopped state, update Tasks, output confirmation, then enter dormant state. Do not dispatch any new executor or strategist subagents after receiving stop.
 
 ---
 
@@ -1043,7 +1414,7 @@ Load on demand:
 - `<ref-dir>/reproduction-guide.md` — common reproduction pitfalls, tolerance table, and when-to-give-up criteria
 - `<ref-dir>/report-template.md` — Report.md section structure and writing guide (7 required sections)
 - `<ref-dir>/report-html-template.html` — HTML/CSS template for Report.html and Report_zh.html
-- `<ref-dir>/file-templates.md` — state.md, status.json, Todo Sync, Progress Tracking, Iteration Log, and log.md event formats
+- `<ref-dir>/file-templates.md` — state.md, status.json, Task Sync, Progress Tracking, Iteration Log, and log.md event formats
 - `<ref-dir>/resource-scheduling.md` — F.1–F.7: scheduling thresholds, live checks, saturation loop, monitoring, parallelism matrix, job queue, adaptive capacity
 - `<ref-dir>/server-config.md` — server.md format: connection block fields, examples, add/remove rules
 - `<ref-dir>/file-sync.md` — file classification table, canonical push/pull rsync commands, local server exceptions
