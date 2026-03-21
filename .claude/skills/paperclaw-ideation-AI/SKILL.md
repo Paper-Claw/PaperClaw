@@ -31,7 +31,7 @@ An auto-pilot, literature-driven pipeline that takes a raw research spark and re
 | Agent | Model | Role |
 |-------|-------|------|
 | `paperclaw-ideation-executor` | sonnet | Default workhorse — all web searches, literature collection, feasibility scouting, Lean 4 build execution, file management, HTML generation, Chinese translation, reference.bib |
-| `paperclaw-ideation-strategist` | opus | High-judgment only — exactly 5 tasks |
+| `paperclaw-ideation-strategist` | opus | High-judgment only — exactly 6 tasks |
 
 ### Strategist (opus) Triggers — exactly 6 tasks:
 
@@ -46,7 +46,7 @@ An auto-pilot, literature-driven pipeline that takes a raw research spark and re
 
 Everything else goes to the executor (sonnet).
 
-**Flow:** When this skill is triggered, invoke `paperclaw-ideation-executor` as the main agent. The executor runs the pipeline and spawns `paperclaw-ideation-strategist` at each trigger point above. The strategist completes its task and returns; the executor resumes. Note: Task B is split into two invocations — B1 (propose directions) then executor scouts feasibility, then B2 (auto-select direction).
+**Flow:** The main session (this skill) is the **central dispatcher**. It drives a Phase state machine, dispatches executor and strategist as stateless single-task agents, outputs completion reports after every return, and syncs Tasks. Neither the executor nor the strategist spawns the other — the main session orchestrates all handoffs. The executor may escalate to the strategist for short, focused help on problems beyond its capability (see executor agent definition), but this is ad-hoc assistance, not a full task dispatch.
 
 ---
 
@@ -59,15 +59,14 @@ flowchart TD
     P1 --> P2[Phase 2: Synthesis\nIdentify gaps, propose 2-3 directions]
     P2 --> P25[Phase 2.5: Feasibility Scout\nQuick-check all directions\nAuto-select best profile]
     P25 --> P3[Phase 3: Deep Dive\n20-30 focused papers]
-    P3 --> P4[Phase 4: Sharpen\nSMART RQ + Theory + Method + Experiment]
-    P4 --> LEAN{Lean 4 Verify}
-    LEAN -->|PASS| METHOD[Method Design + Experiment Plan]
-    LEAN -->|FAIL fixable| RETRY[Retry proof\nmax 10 attempts]
+    P3 --> P4[Phase 4: Sharpen\nSMART RQ + Theory + Lean 4 proofs\n+ Method Design + Experiment Plan]
+    P4 --> LEAN{Lean 4 Build}
+    LEAN -->|PASS| HANDOFF[Handoff: Generate draft Proposal.md]
+    LEAN -->|FAIL fixable| RETRY[Fix .lean files\nmax 10 attempts]
     RETRY --> LEAN
     LEAN -->|FAIL fundamental| ESCALATE[Escalate to\nearlier phase]
     ESCALATE -->|Theory flaw| P4
     ESCALATE -->|Direction flaw| P2
-    METHOD --> HANDOFF[Handoff: Generate draft Proposal.md\nInvoke paperclaw-ideation-reviewing-AI]
     HANDOFF --> REVIEW{Review Panel\n3-5 reviewers}
     REVIEW -->|FAIL| REVISE[Read metareview.md\nRevise Proposal\nWrite feedback.md]
     REVISE -->|max 10 rounds| REVIEW
@@ -176,6 +175,8 @@ All internal files live under `./ideation/`:
 | `literature.md` | Overwrite | Structured analysis notes from Phase 3 deep dive |
 | `theory.md` | Overwrite | Problem formalization and theoretical analysis from Phase 4 |
 | `questions.md` | Append-only | Auto-pilot decision log — source for Proposal Section 9 |
+| `field-survey-results.md` | Overwrite | Raw field survey search results from Phase 0.1 |
+| `feasibility.md` | Overwrite | Feasibility Comparison Table from Phase 2.5 |
 | `reviews/` | Directory | Review panel records (managed by paperclaw-ideation-reviewing-AI) |
 | `lean4/` | Directory | Lean 4 formal verification project |
 
@@ -229,7 +230,7 @@ See **Appendix A** for the full auto-decision table showing what gets auto-decid
 | Revision | `Read` | Read `./ideation/reviews/iteration-N/metareview.md` from review panel |
 | Output | `Write` | Generate final `./Proposal.md`, `./Proposal_zh.md`, `./Proposal.html`, `./Proposal_zh.html`, `./reference.bib` (after review PASS) |
 | Output | `WebSearch` | Search for official BibTeX entries (DBLP, Semantic Scholar) for `./reference.bib` |
-| All | `TodoWrite` | Track current phase and progress within each phase |
+| All | (Task sync) | Main session tracks phase progress via TaskCreate/TaskUpdate after every agent return |
 
 **WebSearch best practices:**
 - Construct queries using Boolean operators (see `references/literature-search-strategies.md`)
@@ -716,116 +717,293 @@ Design a comprehensive experimental plan:
 
 ---
 
-## Handoff & Review Loop
+## Main Session Orchestration
 
-### Architecture: Main Session Orchestration
+### Architecture
 
-The ideation pipeline runs in the **main conversation session**. The main session skill orchestrates the executor→review→revision cycle using structured return values — agents never invoke skills directly.
+The main session (this skill) is the **central dispatcher** for the entire ideation pipeline. It spawns executor and strategist agents as stateless single-task workers, collects their results, outputs completion reports to the user, and updates Tasks after every return. Neither the executor nor the strategist drives the pipeline — the main session orchestrates all handoffs.
 
-**Flow:**
+### Dispatch Sequence
+
 ```
-Main Session Skill
-  │
-  ├─► Spawn executor agent → returns NEXT_ACTION: review-pending
-  │
-  ├─► Invoke reviewing skill (paperclaw-ideation-reviewing-AI)
-  │     └─► Spawns review-orchestrator agent → returns GATE: PASS/FAIL/...
-  │
-  ├─► If GATE: FAIL → spawn executor agent (revision) → returns NEXT_ACTION: review-pending → loop
-  │
-  ├─► If GATE: PASS or FORCE-PROCEED → spawn executor agent (generate outputs) → returns NEXT_ACTION: outputs-generated
-  │
-  └─► Mark Done
+Phase 0.1  → Executor: field-survey
+Phase 0.2  → Strategist: Task A (synthesis + 5W1H)
+Phase 1    → Executor: literature-probe
+Phase 2    → Strategist: Task B1 (gap analysis + directions)
+Phase 2.5  → Executor: feasibility-scout
+Phase 2.5  → Strategist: Task B2 (direction selection)
+Phase 3    → Executor: deep-dive
+Phase 4    → Strategist: Task C (RQ + theory + Lean 4 proofs + method + experiment)
+Phase 4.3  → Executor: lean4-build
+               └─ On proof error → Strategist: Task C retry → Executor: lean4-build (loop, max 10)
+Handoff    → Strategist: Task D (write Proposal.md)
+Review     → Invoke reviewing skill
+               └─ On FAIL → Strategist: Task E (revision) → Review (loop)
+               └─ On PASS → Executor: generate-outputs
+Done
 ```
 
-### Main Session Loop
+### Dispatch Rules
 
-After the executor agent returns `NEXT_ACTION: review-pending`, the main session skill runs this loop:
+1. After **every** Agent() return, the main session:
+   a. Reads the returned result
+   b. Updates `./ideation/state.md` with current phase
+   c. Appends to `./ideation/log.md` with timestamp
+   d. Syncs Tasks (TaskCreate/TaskUpdate)
+   e. Outputs a completion report to the user (see User-Facing Output below)
+   f. Dispatches the next agent
 
+2. Each agent receives **full context** in its prompt:
+   - Current phase and step
+   - Relevant working file contents (read before dispatching)
+   - What the agent should produce and where to write it
+
+3. Agents are stateless — they do NOT read state.md to decide what to do. The main session tells them exactly what to do.
+
+### Dispatch Prompts
+
+#### Phase 0.1 → Executor: field-survey
+```
+Task: field-survey
+Idea: <user's raw idea>
+Instructions: Run 3-5 WebSearch queries to map the field landscape.
+Collect dominant paradigms, key labs, breakthroughs, open problems, benchmarks.
+Write raw results to ./ideation/field-survey-results.md.
+Do NOT synthesize — just collect.
+```
+
+#### Phase 0.2-0.3 → Strategist: Task A
+```
+Task: synthesis
+Input: <field-survey-results.md content>
+Raw Idea: <user's raw idea>
+Instructions: Synthesize Background Briefing, auto-infer 5W1H, write
+1-paragraph summary. Write decisions to ./ideation/questions.md.
+Present the Background Briefing as text output.
+```
+
+#### Phase 1 → Executor: literature-probe
+```
+Task: literature-probe
+Idea Summary: <1-paragraph from Task A>
+5W1H: <inferred dimensions>
+Instructions: Search 10-15 papers, build Landscape Table,
+write to ./ideation/papers.md.
+```
+
+#### Phase 2 → Strategist: Task B1
+```
+Task: gap-analysis
+Input: <papers.md content>
+Instructions: Analyze gaps, propose 2-3 directions with trade-offs.
+Write to ./ideation/questions.md.
+```
+
+#### Phase 2.5 → Executor: feasibility-scout
+```
+Task: feasibility-scout
+Directions: <2-3 directions from Task B1>
+Instructions: For each direction, check dataset availability, baseline
+reproducibility, concurrent work risk. Build Feasibility Comparison Table.
+Write to ./ideation/feasibility.md.
+```
+
+#### Phase 2.5 → Strategist: Task B2
+```
+Task: direction-selection
+Input: <directions + feasibility.md content>
+Instructions: Auto-select best direction. Log to ./ideation/questions.md.
+```
+
+#### Phase 3 → Executor: deep-dive
+```
+Task: deep-dive
+Direction: <chosen direction>
+Existing Papers: <papers.md content>
+Instructions: Search 20-30 papers on chosen direction, build comparison
+matrix, identify baselines. Write to ./ideation/literature.md,
+append to ./ideation/papers.md.
+```
+
+#### Phase 4.1-4.5 → Strategist: Task C
+```
+Task: research-sharpening
+Input: <literature.md, theory.md (if exists), questions.md>
+Direction: <chosen direction>
+Instructions: SMART RQ, problem formalization, theoretical analysis,
+Lean 4 proofs, method design, experiment plan.
+Write to: ./ideation/theory.md, ./ideation/lean4/IdeationProofs/*.lean,
+./ideation/questions.md.
+```
+
+#### Phase 4.3 → Executor: lean4-build
+```
+Task: lean4-build
+Instructions: Set up Lean 4 env if needed. Run lake build.
+Classify result: FULL PASS / PARTIAL PASS / Proof Error / Syntax Error.
+On Syntax Error: fix and retry (does not count toward limit).
+Return build result and error output (if any).
+```
+
+#### Lean 4 Retry Loop (main session logic)
+```
+If lean4-build returns Proof Error:
+  1. Increment Lean4Attempt in state.md
+  2. Dispatch Strategist: lean4-fix (NOT a full Task C re-run)
+  3. Dispatch Executor: lean4-build again
+  4. Repeat up to Lean4Attempt=10
+  5. If still failing: set Lean4Escalation=true, log to questions.md, continue
+```
+
+**Lean 4 fix dispatch prompt (strategist):**
+```
+Task: lean4-fix (narrow scope — do NOT redo RQ, method design, or experiment plan)
+Attempt: <N>/10
+Build Error: <full lake build error output>
+Current .lean files: <list of files and their content>
+theory.md: <relevant section>
+Instructions: Analyze the Lean 4 build error. Diagnose whether the issue is
+a wrong proof strategy, wrong theorem statement, or missing lemma.
+Fix ONLY the affected .lean files. Do NOT modify theory.md unless the theorem
+statement itself is wrong. Return a summary of what was changed.
+```
+
+#### Handoff → Strategist: Task D
+```
+Task: write-proposal
+Input: <all working files: theory.md, literature.md, papers.md,
+questions.md, log.md, lean4 source + build logs>
+Instructions: Write complete ./Proposal.md (10 sections + appendices).
+Proposal must be completely self-contained.
+```
+
+**CRITICAL: Proposal.md is the ONLY document the review panel sees.** Reviewers cannot access `./ideation/theory.md`, `./ideation/lean4/`, `./ideation/literature.md`, or any working files. The Proposal must be **completely self-contained** with full theory, complete proofs, full Lean 4 source code, and comprehensive literature analysis. Do NOT summarize or abbreviate — include everything the reviewers need to evaluate the proposal's quality.
+
+After Task D returns, the main session:
+1. Writes `./ideation/state.md` with `Phase: review-pending`
+2. Appends to `./ideation/log.md`: "Phase 4 complete. Proposal draft generated. Handing off to review panel."
+3. Enters the Review Loop below.
+
+#### Review Loop (main session logic)
 ```
 LOOP:
   1. Invoke paperclaw-ideation-reviewing-AI skill
-     - The skill spawns the review-orchestrator agent
-     - The orchestrator returns a gate result: GATE: PASS | FAIL | USER-REVISION-FAIL | FORCE-PROCEED
+     → Returns GATE: PASS | FAIL | USER-REVISION-FAIL | FORCE-PROCEED
 
   2. Parse the gate result:
      - GATE: PASS →
-         Spawn executor agent with: "generate final outputs"
-         Wait for NEXT_ACTION: outputs-generated
+         Dispatch Executor: generate-outputs
          Update state.md: Phase: Done
          EXIT LOOP
 
      - GATE: FAIL | iteration=N | metareview=<path> →
-         Spawn executor agent with: "Revision needed. Read metareview at <path>. Revise Proposal.md and set state to review-pending."
-         Wait for NEXT_ACTION: review-pending
+         Dispatch Strategist: Task E (revision)
+           prompt includes: metareview path, current Proposal.md, all working files
+         After return: set state to review-pending
          CONTINUE LOOP
 
      - GATE: USER-REVISION-FAIL | cycle=C | round=R | metareview=<path> →
-         Spawn executor agent with: "User-revision feedback at <path>. Revise Proposal.md and set state to review-pending."
-         Wait for NEXT_ACTION: review-pending
+         Dispatch Strategist: Task E (revision)
+           prompt includes: metareview path, user feedback path
+         After return: set state to review-pending
          CONTINUE LOOP
 
      - GATE: FORCE-PROCEED | reason=<reason> →
-         Spawn executor agent with: "generate final outputs (force-proceed: <reason>)"
-         Wait for NEXT_ACTION: outputs-generated
+         Dispatch Executor: generate-outputs (with caveat note)
          Update state.md: Phase: Done
          EXIT LOOP
 ```
 
-### Proposal Handoff (executor responsibility)
-
-After Phase 4 is complete, the executor generates `./Proposal.md` (draft version) and returns control to the main session.
-
-**CRITICAL: Proposal.md is the ONLY document the review panel sees.** Reviewers cannot access `./ideation/theory.md`, `./ideation/lean4/`, `./ideation/literature.md`, or any working files. The Proposal must be **completely self-contained** with full theory, complete proofs, full Lean 4 source code, and comprehensive literature analysis. Do NOT summarize or abbreviate — include everything the reviewers need to evaluate the proposal's quality.
-
-1. Write `./ideation/state.md` with `Phase: review-pending`
-2. Append to `./ideation/log.md`: "Phase 4 complete. Proposal draft generated. Handing off to review panel."
-3. **Return** `NEXT_ACTION: review-pending` to the main session. Do NOT invoke any reviewing skill — the main session handles that.
-
-### Final Output Generation (executor responsibility, after PASS or FORCE-PROCEED)
-
-When the main session instructs the executor to generate final output files, skip all phases and go directly to the **Research Proposal Output** section below. Read `./Proposal.md` and generate:
-- `./Proposal_zh.md` — Chinese translation
-- `./Proposal.html` — English, styled HTML with KaTeX
-- `./Proposal_zh.html` — Chinese, styled HTML with KaTeX
-- `./reference.bib` — BibTeX entries for all cited papers
-
-Do NOT alter `./Proposal.md`. Follow the rendering rules in the Research Proposal Output section exactly. After generation, **return** `NEXT_ACTION: outputs-generated` to the main session.
-
-### Revision from Reviewer Feedback (executor responsibility)
-
-When the main session instructs the executor to revise (after GATE: FAIL or USER-REVISION-FAIL), read the metareview at the path provided:
-
-1. Read the metareview carefully — focus on the **Primary Concerns**, **Specific Suggestions**, and **Questions to Address in Revision** sections. The metareview should contain only qualitative feedback (no numeric scores). If any numeric scores appear, disregard them — they should not be present.
-2. Identify the primary concerns raised by reviewers
-3. For each concern, determine which phase to revisit (see `references/iteration-loop.md` for the feedback-to-phase mapping)
-4. Re-run from the earliest affected phase forward
-5. Regenerate `./Proposal.md` draft
-6. **Write feedback.md** in the appropriate review directory documenting the changes made:
-
-```markdown
-# Revision Feedback — Iteration N
-
-## Changes Made to Proposal.md
-
-### Concern 1: [concern title from metareview]
-**What was changed:** [specific section/content modified]
-**How it addresses the concern:** [explanation]
-
-### Concern 2: [concern title]
-**What was changed:** ...
-**How it addresses the concern:** ...
-
-## Phases Revisited
-- [Phase X]: [reason — which concern required it]
-
-## Unresolved Concerns (if any)
-- [concern]: [why it could not be fully addressed and what was done instead]
+#### Executor: generate-outputs
+```
+Task: generate-outputs
+Input: <Proposal.md content>
+Instructions: Generate Proposal_zh.md, Proposal.html, Proposal_zh.html,
+reference.bib. Do NOT alter Proposal.md. Follow rendering rules in
+Research Proposal Output section. Validate all 5 output files exist.
 ```
 
-7. Set state to `Phase: review-pending` and **return** `NEXT_ACTION: review-pending` to the main session.
+### User-Facing Output (Completion Reports)
 
-The review panel controls the iteration count and pass/fail decision — the executor simply responds to their feedback and resubmits.
+After **every** agent return, the main session outputs a structured completion report. The user must never be left wondering what just happened.
+
+**Output Rules:**
+1. Output IMMEDIATELY after each Agent() return — before any next dispatch
+2. Use English
+3. Keep concise — key facts only
+4. Include "Action:" line showing what happens next
+
+**Template 1 — Phase Completed:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IDEATION PROGRESS — Phase <N> Complete
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Result: <one-line summary of what was produced>
+Key Finding: <one-line highlight>
+Action: <what the main session will dispatch next>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Template 2 — Review Result:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REVIEW RESULT — Iteration <N>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Gate: PASS | FAIL
+Key Concerns:
+  1. <concern 1>
+  2. <concern 2>
+Action: <starting revision / generating outputs>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Template 3 — Revision Completed:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REVISION COMPLETE — Iteration <N>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Changes: <summary of what changed>
+Phases Revisited: <which phases>
+Action: Re-submitting to review panel...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+**Template 4 — Pipeline Complete:**
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IDEATION COMPLETE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Review: PASS (iteration <N>)
+Output Files:
+  - Proposal.md       — English proposal
+  - Proposal_zh.md    — Chinese translation
+  - Proposal.html     — Styled HTML
+  - Proposal_zh.html  — Chinese HTML
+  - reference.bib     — BibTeX references
+Total iterations: <N> | Papers cited: <M>
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Task Sync
+
+The main session maintains a `paperclaw-ideation` task updated after every agent return:
+
+```
+Phase 2.5: Direction Selection (6/12 steps done)
+ ✅ Field survey: 5 searches, landscape mapped
+ ✅ Synthesis: Background Briefing ready, 5W1H inferred
+ ✅ Literature probe: 12 papers collected
+ ✅ Gap analysis: 3 directions proposed
+ ✅ Feasibility scout: all directions checked
+ 🔄 Direction selection: strategist deciding...
+ ⏳ Deep dive (20-30 papers)
+ ⏳ Research sharpening (RQ + theory + Lean 4)
+ ⏳ Lean 4 build
+ ⏳ Proposal writing
+ ⏳ Review
+ ⏳ Final outputs
+Next: strategist selecting direction
+```
 
 ---
 
@@ -931,7 +1109,7 @@ At every decision point, strip away assumptions and reason from fundamentals:
 | `Write` / `Edit` | All working files, Proposal files, Lean 4 code |
 | `Read` | Metareview, state.md, papers.md, existing working files |
 | `Bash` | Lean 4 installation and `lake build` |
-| `TodoWrite` | Phase/step progress tracking |
+| `TaskCreate` / `TaskUpdate` | Main session tracks phase progress (never used by executor/strategist) |
 
 ---
 

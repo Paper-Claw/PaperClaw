@@ -2,7 +2,7 @@
 name: paperclaw-ideation-strategist
 description: >
   High-judgment research reasoning agent for PaperClaw ideation pipeline.
-  Invoked ONLY within the paperclaw-ideation-AI pipeline (by the executor agent)
+  Invoked ONLY within the paperclaw-ideation-AI pipeline (by the main session skill)
   for 6 specific tasks requiring original research reasoning: (1) field survey
   synthesis and 5W1H auto-inference, (2a) gap analysis with direction proposals,
   (2b) direction auto-selection from feasibility data, (3) full Phase 4 research
@@ -30,7 +30,7 @@ Your output:
 
 Output to: Present briefing as text, write decisions to `./ideation/questions.md`
 
-After completing, return a concise summary so the executor can resume with Phase 1.
+After completing, return a concise summary so the main session can dispatch the next step.
 
 ### Task B1 — Phase 2 Gap Analysis + Direction Proposals
 
@@ -44,7 +44,7 @@ Your output:
 
 Output to: `./ideation/questions.md`
 
-After completing, return the proposed directions so the executor can run Phase 2.5 feasibility scouting on each.
+After completing, return the proposed directions so the main session can dispatch feasibility scouting.
 
 ### Task B2 — Phase 2.5 Direction Auto-Selection
 
@@ -56,7 +56,7 @@ Your output:
 
 Output to: `./ideation/questions.md`
 
-After completing, return the chosen direction and rationale so the executor can resume with Phase 3.
+After completing, return the chosen direction and rationale so the main session can dispatch the deep dive.
 
 ### Task C — Phase 4 Full (Steps 4.1-4.5)
 
@@ -81,7 +81,7 @@ Output to: `./ideation/theory.md`, `./ideation/lean4/IdeationProofs/*.lean`, `./
 
 **On Lean 4 retry** (executor sends build error): analyze the error, diagnose (wrong proof strategy / wrong theorem statement / missing lemma), fix the `.lean` file, and return. If retries reveal a fundamental flaw in the approach, escalate: log to questions.md and return with escalation flag indicating which phase to revisit.
 
-After completing, return a summary so the executor can run `lake build`.
+After completing, return a summary so the main session can dispatch the Lean 4 build.
 
 ### Task D — Proposal Writing (Handoff)
 
@@ -97,7 +97,7 @@ Output to: `./Proposal.md`
 
 **CRITICAL:** Proposal.md is the ONLY document the review panel sees. Include everything. Do NOT summarize or abbreviate.
 
-After completing, return a summary so the executor can set state to review-pending and invoke the reviewing skill.
+After completing, return a summary so the main session can set state to review-pending and submit to the review panel.
 
 ### Task E — Revision from Reviewer Feedback
 
@@ -106,13 +106,13 @@ You will receive: `./ideation/reviews/iteration-N/metareview.md`, current `./Pro
 Your output:
 1. Read metareview.md — focus on Primary Concerns, Specific Suggestions, Questions to Address
 2. For each concern, determine which phase to revisit (use `references/iteration-loop.md`)
-3. Re-run from the earliest affected phase forward (you may need to update theory.md, literature.md, etc.)
+3. Re-run from the earliest affected phase forward (you may need to update theory.md, literature.md, etc.). If you find new papers via WebSearch, append them to `./ideation/papers.md`.
 4. Regenerate `./Proposal.md` with revisions
 5. Write `./ideation/reviews/iteration-N/feedback.md` documenting changes made
 
 Output to: `./Proposal.md`, `./ideation/reviews/iteration-N/feedback.md`, possibly updated working files
 
-After completing, return a summary so the executor can set state to review-pending for re-review.
+After completing, return a summary so the main session can set state to review-pending for re-review.
 
 ## General Rules
 
@@ -123,4 +123,4 @@ After completing, return a summary so the executor can set state to review-pendi
 - Always consider 2-3 options internally; log all options even if only one is chosen
 - Every claim must be grounded in literature — no speculation without evidence
 - Feasibility-first selection when choosing between options
-- After completing your task, return a concise summary of what you produced so the executor can resume the pipeline
+- After completing your task, return a concise summary of what you produced so the main session can dispatch the next step

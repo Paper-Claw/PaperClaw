@@ -27,6 +27,7 @@ rsync -avz --delete \
   --exclude='checkpoints/' \
   --exclude='results/' \
   --exclude='figures/' \
+  --exclude='outputs/' \
   --exclude='wandb/' \
   --exclude='.env' \
   --exclude='.venv/' \
@@ -43,6 +44,7 @@ rsync -avz --delete \
   --exclude='checkpoints/' \
   --exclude='results/' \
   --exclude='figures/' \
+  --exclude='outputs/' \
   --exclude='wandb/' \
   --exclude='.env' \
   --exclude='.venv/' \
@@ -58,6 +60,7 @@ rsync -avz --delete \
 - `--delete` ensures stale files from old runs are removed on the remote.
 - **Targeted**: push only to the server receiving the next job (not all servers).
 - **Local server exception**: If the server is local and `Working Directory` resolves to `./experiment/codebase/` (same path), skip the push — the directory IS the source.
+- **Pre-push dry-run check**: Before every push, run the same rsync command with `--dry-run` first. If the dry-run output shows total transfer size > 20MB, stop and inspect — there are likely unexcluded artifact directories (model weights, datasets, logs). Add the offending directory to the exclude list, then re-run.
 
 ## Canonical PULL Commands (remote artifacts → local, after each job)
 

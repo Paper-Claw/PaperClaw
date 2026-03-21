@@ -13,6 +13,7 @@ Overwrite this file after every phase transition.
 **Direction:** [chosen direction title, or "TBD"]
 **Lean4Status:** [not_started / in_progress / pass / partial_pass / fail]
 **Lean4Attempt:** [0-10]
+**Lean4Escalation:** [true / false — set when Lean 4 retries reveal fundamental approach flaw; absent until triggered]
 **UserRevisionCycle:** [C — which user-initiated revision cycle; increments each time user initiates a new revision; absent until first user-initiated revision]
 **UserRevisionRound:** [R — which review round within current cycle; resets to 1 each new cycle; increments on FAIL]
 **UserRevisionBudget:** [3 / 2 / 1 / 0 — remaining review attempts in current cycle; resets to 3 each new cycle]

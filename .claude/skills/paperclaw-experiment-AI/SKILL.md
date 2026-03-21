@@ -881,7 +881,7 @@ git commit -m "chore: initialize experiment codebase scaffold"
 ```bash
 rsync -az \
   --exclude='data/' --exclude='checkpoints/' --exclude='results/' \
-  --exclude='figures/' --exclude='wandb/' --exclude='.env' \
+  --exclude='figures/' --exclude='outputs/' --exclude='wandb/' --exclude='.env' \
   --exclude='.venv/' --exclude='__pycache__/' --exclude='*.pyc' --exclude='.git/' \
   -e "ssh -p <port>" \
   ./experiment/codebase/ \
