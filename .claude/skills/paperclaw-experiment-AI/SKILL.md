@@ -451,20 +451,21 @@ When starting a new session, check if `./experiment/state.md` exists:
 1. **If exists** → Read state.md to determine current phase/step
 2. **Read log.md** for recent events and context
 3. **Check codebase exists** — If state.md shows phase ≥ 1, verify `./experiment/codebase/` exists. If missing, ask the user before proceeding.
-4. **Sync server.md → state.md** — Re-read `./experiment/server.md` and compare all `## Connection <name>` blocks to the Servers table in state.md:
+4. **Early Tasks sync** — Immediately create/update Tasks from state.md's existing data (Current Phase, Current Step, job_queue, completed experiments) so the user sees current progress before slow SSH checks begin. This is a preliminary snapshot — it will be refined in step 8 after live server status is known.
+5. **Sync server.md → state.md** — Re-read `./experiment/server.md` and compare all `## Connection <name>` blocks to the Servers table in state.md:
    - Any server whose name is absent from the Servers table is **new** → add a row with `Status: untested`. Run Phase 0 Steps 0.2–0.5 for those servers only. Then, if phase ≥ 1: push codebase and create `.venv`.
    - Any server in the Servers table but absent from server.md → removed by user. Remove from all state.md tables; cancel queued jobs for it.
    - This step also fires when the user explicitly says "I've updated server.md", etc.
-5. **Check all known servers** via SSH:
+6. **Check all known servers** via SSH:
    - Reachable? Dispatch `executor("check")` to detect active tmux sessions (`paperclaw-*`). If jobs are still running, add them back to `active_jobs` in state.md.
    - If SSH **unreachable**: retry once after 30 seconds. If still unreachable: mark `disconnected`.
    - If **no** servers reachable: ask user (wait / local-only / abort).
-6. **Rebuild job state** — Compare `plan.md` experiment list against `results.md` to identify incomplete experiments. Add them to `job_queue` in state.md.
-7. **Sync Tasks** — Update Tasks with current phase, active jobs, pending jobs, blockers.
-8. **Check for stopped state** — if `Status: stopped` in state.md, output:
+7. **Rebuild job state** — Compare `plan.md` experiment list against `results.md` to identify incomplete experiments. Add them to `job_queue` in state.md.
+8. **Sync Tasks** — Update Tasks with current phase, active jobs, pending jobs, blockers (refines the preliminary snapshot from step 4 with live server data).
+9. **Check for stopped state** — if `Status: stopped` in state.md, output:
    > "上次会话已停止，位于 Phase \<N\> Step \<X.Y\>。回复 "resume" 继续，或 "abort" 放弃当前实验状态。"
    Wait for user reply. On `resume`: set `Status: running` and continue. On `abort`: delete state.md, status.json, clear Tasks.
-9. **Output resume summary** directly to the user:
+10. **Output resume summary** directly to the user:
    ```
    ━━━ RESUMING ━━━━━━━━━━━━━━━━━━━━━
    Previous session interrupted. Current state:
@@ -474,7 +475,7 @@ When starting a new session, check if `./experiment/state.md` exists:
     Queued: DenseNet, EfficientNet
    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    ```
-10. **Parse user directive** — If the user provided instructions alongside the skill invocation (not a bare resume), parse and execute before entering the main loop:
+11. **Parse user directive** — If the user provided instructions alongside the skill invocation (not a bare resume), parse and execute before entering the main loop:
 
    | User Directive | Action |
    |---|---|
@@ -487,6 +488,8 @@ When starting a new session, check if `./experiment/state.md` exists:
    | "Change config/hyperparams for X" | Update config file locally. Mark affected experiments as `needs-rerun`. Add to `job_queue`. |
    | "Skip phase X" / "Jump to phase X" | Update `Current Phase` in state.md. Skip intermediate phases. |
    | No directive (bare resume) | No action — proceed directly. |
+
+   **Decomposition rule**: When a directive (or combination of directive + rebuilt job_queue) produces multiple independent actions, the main session MUST add them as separate entries in `job_queue` and let the main dispatch loop handle parallel scheduling via saturation. NEVER combine multiple independent tasks into a single executor invocation — each executor call handles exactly one task.
 
    After executing the directive:
    - Update state.md with any plan changes
@@ -502,7 +505,7 @@ When starting a new session, check if `./experiment/state.md` exists:
      ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
      ```
 
-11. **Enter main dispatch loop** from the current phase
+12. **Enter main dispatch loop** from the current phase — resume is treated identically to normal execution: read state.md, dispatch from job_queue via saturation, one executor per task. Do NOT bypass the loop by bundling multiple tasks into a single executor call.
 
 If the user wants to restart a phase, they must explicitly say so.
 
